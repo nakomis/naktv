@@ -105,10 +105,16 @@ reset the session every twelve hours, staggered four hours apart (see
 set up from scratch the token changes, so it has to be written again:
 
 ```sh
-pnpm exec ares-novacom --device b3 --run 'cat /var/luna/preferences/devmode_enabled' \
-  | aws ssm put-parameter --profile nakom.is-admin --region eu-west-2 \
-      --name /naktv/devmode-session-token --type SecureString --overwrite --value file:///dev/stdin
+# ares-novacom prints an "[Info] Set target device" line on stdout, so keep
+# only the hex token line. Don't echo it: it re-arms the TV's dev mode.
+TOKEN=$(pnpm exec ares-novacom --device b3 --run 'cat /var/luna/preferences/devmode_enabled' \
+  | grep -E '^[0-9a-f]{32,}$' | tail -1)
+aws ssm put-parameter --profile nakom.is-admin --region eu-west-2 \
+  --name /naktv/devmode-session-token --type SecureString --overwrite --value "$TOKEN"
 ```
+
+The reset endpoint answers `{"result":"success","errorCode":"200",…}` when it
+works.
 
 ## Building and installing
 
