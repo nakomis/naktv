@@ -1,0 +1,16 @@
+# pnpm settings for the app package. Not a real workspace (single package) —
+# this file exists only to hold pnpm's supply-chain settings.
+
+# minimumReleaseAge: refuse to resolve a version published less than this many
+# minutes ago. 1440 = 24h. CI installs with --frozen-lockfile, so this only
+# affects local dependency updates.
+minimumReleaseAge: 1440
+
+# pnpm doesn't run dependency build scripts unless told to. None of these are
+# needed: the webOS CLI's postinstall only chmods its own config files, and
+# ssh2 / cpu-features have pure-JS fallbacks for their optional native builds.
+# Denied explicitly so a clean install doesn't fail with ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  '@webos-tools/cli': false
+  cpu-features: false
+  ssh2: false

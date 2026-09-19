@@ -1,0 +1,12 @@
+# pnpm settings for the infra package. Not a real workspace (single package) —
+# this file exists only to hold pnpm's supply-chain settings.
+
+# unrs-resolver is the native module resolver jest 30 uses at runtime.
+# @parcel/watcher (pulled in transitively) ships prebuilt binaries and is only
+# used for watch mode, so its build script is denied.
+allowBuilds:
+  '@parcel/watcher': false
+  unrs-resolver: true
+
+# Refuse versions published less than 24h ago (compromised-republish window).
+minimumReleaseAge: 1440
