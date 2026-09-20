@@ -30,7 +30,13 @@ const GO2RTC_STREAM = 'printer_av';
 export function go2rtcUrls(host: string = getSettings().go2rtcHost) {
   const base = `http://${host}:${GO2RTC_PORT}`;
   return {
-    /** Progressive fMP4 — plays in a plain <video> on Chromium 108. */
+    /**
+     * go2rtc's MSE WebSocket. The only transport this TV will play both the
+     * video and the muxed Spotify audio from: progressive fMP4 renders no
+     * picture once an audio track is present, and HLS is refused outright.
+     */
+    mseUrl: `ws://${host}:${GO2RTC_PORT}/api/ws?src=${GO2RTC_STREAM}`,
+    /** Progressive fMP4. Video-only; kept for the stream without audio. */
     mp4Url: `${base}/api/stream.mp4?src=${GO2RTC_STREAM}`,
     /** Single frame, for the connection check before we commit to the video. */
     frameUrl: `${base}/api/frame.jpeg?src=${GO2RTC_STREAM}`,

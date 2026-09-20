@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { CONFIG } from '../../config';
 import { getSettings } from '../../settings';
 import { seekToLiveEdge } from './liveEdge';
+import { connectMse } from './mseClient';
 import { useMjpegFeed } from './useMjpegFeed';
 import { useVideoFeed } from './useVideoFeed';
 
@@ -41,6 +42,15 @@ export function PrinterCam() {
     if (element) element.muted = false;
   }, [video]);
 
+  // The feed arrives over MSE rather than as a plain src: it is the only
+  // transport this TV plays both the video and the muxed audio from.
+  useEffect(() => {
+    const element = videoRef.current;
+    if (video.mode !== 'video' || !video.mseUrl || !element) return;
+    const connection = connectMse(element, video.mseUrl, { onError: video.onError });
+    return () => connection.close();
+  }, [video.mode, video.mseUrl, video.onError]);
+
   // Keep the player near the live edge; see liveEdge.ts for why it drifts.
   useEffect(() => {
     if (video.mode !== 'video') return;
@@ -53,12 +63,12 @@ export function PrinterCam() {
 
   return (
     <div className="printer-cam">
-      {video.mode === 'video' && video.videoSrc ? (
+      {video.mode === 'video' && video.mseUrl ? (
         <video
           ref={videoRef}
-          // muted + autoPlay + playsInline is what lets webOS start it
-          // unattended; handlePlaying unmutes it again once it has.
-          src={video.videoSrc}
+          // No src: connectMse attaches the MediaSource. muted + autoPlay +
+          // playsInline is what lets webOS start it unattended, and
+          // handlePlaying unmutes it again once it has.
           autoPlay
           muted
           playsInline
