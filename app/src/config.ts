@@ -57,10 +57,25 @@ export const CONFIG = {
     videoTimeoutMs: 8000,
     /** How long to sit on the MJPEG fallback before retrying H.264. */
     videoRetryMs: 2 * 60 * 1000,
-    /** Lag past which the player skips forward to the live edge. */
-    liveEdgeMaxLagMs: 1500,
-    /** How far behind the buffered end to land after skipping. */
-    liveEdgeTargetMs: 300,
+    /**
+     * Lag past which the player skips forward to the live edge.
+     *
+     * Generous, because over MSE we feed the SourceBuffer ourselves and a seek
+     * lands wherever we put it — with no browser-managed buffer to absorb the
+     * difference. Chasing hard costs far more than the latency it saves.
+     */
+    liveEdgeMaxLagMs: 8000,
+    /**
+     * How far behind the buffered end to land after skipping.
+     *
+     * Was 300 ms, tuned for progressive MP4 where the browser managed its own
+     * buffering. Over MSE that is self-defeating: landing 300 ms from the edge
+     * leaves 300 ms of buffer, playback starves immediately, stalls until the
+     * buffer refills, then gets seeked back onto the edge to starve again —
+     * a loop that looks like the picture hanging a second at a time, forever.
+     * Land with real headroom instead.
+     */
+    liveEdgeTargetMs: 3000,
     /** How often to check the lag. */
     liveEdgeCheckMs: 1000,
   },
