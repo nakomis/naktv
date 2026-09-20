@@ -9,6 +9,9 @@ build/
 # Generated at build time from the deployment tracker
 version.json
 
+# Populated by scripts/set-config.sh from SSM; template is committed
+app/src/secrets.json
+
 # Planning
 PLAN.md
 

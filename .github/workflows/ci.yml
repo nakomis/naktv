@@ -225,11 +225,19 @@ jobs:
         run: pnpm ci-deploy-prod
 
   # NakTV has no cloud deploy: the TV is on the LAN and is sideloaded from the
-  # Mac. A merge instead publishes the .ipk as a GitHub Release, which
-  # `scripts/install-tv.sh --latest` installs, and records that as the prod
-  # deployment in the tracker.
+  # Mac with `scripts/install-tv.sh`.
+  #
+  # This job packages the .ipk purely to prove the build, and publishes
+  # nothing. It used to cut a GitHub Release, but the app now carries an
+  # OctoPrint API key baked in at build time, and this is a public repository —
+  # a released .ipk would put that key in a public artefact. CI therefore never
+  # holds the key either: `set-config.sh` finds no credentials, keeps the
+  # template's placeholder, and the overlay reports itself unconfigured.
+  #
+  # Nothing is deployed here, so nothing is recorded in the deployment tracker.
+  # `install-tv.sh --latest` no longer has a release to fetch.
   release:
-    name: Release .ipk
+    name: Package .ipk
     runs-on: ubuntu-latest
     needs: [changes, version]
     if: |
@@ -237,8 +245,7 @@ jobs:
       && needs.version.result == 'success'
       && (needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch')
     permissions:
-      id-token: write
-      contents: write
+      contents: read
     defaults:
       run:
         working-directory: app
@@ -264,24 +271,6 @@ jobs:
           path: app
       - name: Build and package
         run: pnpm run package
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          gh release create "v${VERSION}" build/com.nakomis.naktv_${VERSION}_all.ipk \
-            --target "${GITHUB_SHA}" --title "NakTV ${VERSION}" --generate-notes
-      - name: Configure AWS credentials (prod)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.PROD_ROLE_ARN }}
-          aws-region: eu-west-2
-      - name: Record deployment
-        uses: nakomis/nakomis-infra/.github/actions/record-deployment@main
-        with:
-          project: naktv
-          environment: prod
-          version-file: app/version.json
 
   ci-status:
     name: CI Status

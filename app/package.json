@@ -6,12 +6,16 @@
   "packageManager": "pnpm@11.5.1",
   "scripts": {
     "dev": "vite",
+    "prebuild": "../scripts/set-config.sh",
     "build": "tsc -b && vite build && node scripts/write-appinfo.mjs",
     "package": "pnpm run build && ares-package dist -o build",
     "install-tv": "../scripts/install-tv.sh",
+    "pretest": "../scripts/set-config.sh",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "pretypecheck": "../scripts/set-config.sh",
     "typecheck": "tsc -b",
+    "prelint": "../scripts/set-config.sh",
     "lint": "biome check .",
     "format": "biome format --write ."
   },
