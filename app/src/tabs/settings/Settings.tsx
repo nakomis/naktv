@@ -12,18 +12,30 @@ import { DEFAULT_SETTINGS, getSettings, saveSettings } from '../../settings';
  *
  * The tab strip owns Left/Right at the shell level only while it is visible;
  * it hides after a few seconds, which is when this tab sees the arrows.
+ *
+ * The print overlay toggle rides the same cursor rather than introducing a
+ * second interaction model: Right past the last octet lands on it, and Up/Down
+ * flips it exactly as they change a number.
  */
+/** Cursor position of the overlay toggle: one past the four octets. */
+const OVERLAY_FIELD = 4;
 export function SettingsTab() {
   const [octets, setOctets] = useState<number[]>(() =>
     getSettings().go2rtcHost.split('.').map(Number),
   );
   const [selected, setSelected] = useState(3);
+  const [overlay, setOverlay] = useState(() => getSettings().showPrintOverlay);
   const [saved, setSaved] = useState<string | null>(null);
 
   const host = octets.join('.');
 
   const bump = useCallback(
     (delta: number) => {
+      if (selected === OVERLAY_FIELD) {
+        setOverlay((on) => !on);
+        setSaved(null);
+        return;
+      }
       setOctets((current) =>
         current.map((value, index) =>
           index === selected ? Math.max(0, Math.min(255, value + delta)) : value,
@@ -41,7 +53,7 @@ export function SettingsTab() {
           setSelected((index) => Math.max(0, index - 1));
           break;
         case Keys.Right:
-          setSelected((index) => Math.min(3, index + 1));
+          setSelected((index) => Math.min(OVERLAY_FIELD, index + 1));
           break;
         case Keys.Up:
           bump(1);
@@ -50,7 +62,10 @@ export function SettingsTab() {
           bump(-1);
           break;
         case Keys.Enter: {
-          const stored = saveSettings({ go2rtcHost: octets.join('.') });
+          const stored = saveSettings({
+            go2rtcHost: octets.join('.'),
+            showPrintOverlay: overlay,
+          });
           setSaved(stored.go2rtcHost);
           break;
         }
@@ -61,7 +76,7 @@ export function SettingsTab() {
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [bump, octets]);
+  }, [bump, octets, overlay]);
 
   return (
     <div className="settings">
@@ -84,7 +99,17 @@ export function SettingsTab() {
           </span>
         ))}
       </fieldset>
-      <p className="hint">Left/Right to pick a number, Up/Down to change it, OK to save.</p>
+      <h1>Print overlay</h1>
+      <p className="hint">
+        Print name, times and temperatures from OctoPrint, over the camera feed.
+      </p>
+      <p
+        className={selected === OVERLAY_FIELD ? 'octet selected' : 'octet'}
+        aria-current={selected === OVERLAY_FIELD ? 'true' : undefined}
+      >
+        {overlay ? 'On' : 'Off'}
+      </p>
+      <p className="hint">Left/Right to move, Up/Down to change, OK to save.</p>
       <p className="saved" role="status">
         {saved ? `Saved — streaming from ${saved}` : `Editing ${host}`}
       </p>

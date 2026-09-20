@@ -9,10 +9,13 @@ const STORE_KEY = 'naktv.settings';
 export interface Settings {
   /** Host running go2rtc (phi). IP, not a name: webOS mDNS is unreliable. */
   go2rtcHost: string;
+  /** Show print name, times and temperatures over the camera feed. */
+  showPrintOverlay: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   go2rtcHost: '172.29.0.14',
+  showPrintOverlay: true,
 };
 
 /** Dotted-quad only — this is typed on a remote, so keep the check obvious. */
@@ -33,6 +36,11 @@ function read(): Partial<Settings> {
 
 let current: Settings = { ...DEFAULT_SETTINGS, ...read() };
 if (!isValidHost(current.go2rtcHost)) current = { ...DEFAULT_SETTINGS };
+// Settings stored before the overlay existed carry no boolean at all, and
+// `undefined` would spread over the default and render nothing.
+if (typeof current.showPrintOverlay !== 'boolean') {
+  current = { ...current, showPrintOverlay: DEFAULT_SETTINGS.showPrintOverlay };
+}
 
 export function getSettings(): Settings {
   return current;

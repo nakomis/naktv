@@ -12,6 +12,7 @@
 // is ugly but it is served by a box that is always on.
 //
 // IPs rather than .local names: webOS doesn't reliably resolve mDNS.
+import secrets from './secrets.json';
 import { getSettings } from './settings';
 
 const LEIA = 'http://172.29.0.32:8090';
@@ -79,6 +80,34 @@ export const CONFIG = {
     /** How often to check the lag. */
     liveEdgeCheckMs: 1000,
   },
+  /**
+   * OctoPrint, for the print overlay.
+   *
+   * By vhost name, not by IP: the certificate is issued for the name, so
+   * `https://172.29.0.32` fails hostname verification and the TV refuses it.
+   * Contrary to the note above about mTLS, this endpoint needs no client
+   * certificate — OctoPrint answers an `X-Api-Key` directly, and CORS from the
+   * app's origin is permitted. Verified on the B3.
+   *
+   * The key is populated into `secrets.json` by `scripts/set-config.sh` from
+   * SSM `/octoprint/api-key`, the same parameter Ansible templates into
+   * OctoPrint itself. A build without AWS credentials keeps the placeholder,
+   * and the overlay reports itself unconfigured rather than failing obscurely.
+   */
+  octoPrint: {
+    baseUrl: 'https://octoprint.home.nakomis.com',
+    apiKey: secrets.octoprintApiKey,
+    /** Temperatures move slowly; this is frequent enough to feel live. */
+    pollIntervalMs: 5000,
+    /** Give up on a poll well inside the interval, so they cannot pile up. */
+    timeoutMs: 4000,
+  },
   /** How long the tab strip stays up after the last keypress. */
   stripHideDelayMs: 4000,
 } as const;
+
+/** The placeholder `secrets.json.template` ships with. */
+export function hasOctoPrintKey(): boolean {
+  const key = CONFIG.octoPrint.apiKey;
+  return Boolean(key) && !key.startsWith('<');
+}

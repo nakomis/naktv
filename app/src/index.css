@@ -200,3 +200,64 @@ body {
   font-size: 2.4vh;
   margin: 0;
 }
+
+/*
+ * Print overlay — a single strip across the top of the camera feed.
+ *
+ * Read from across a room, so sizes are generous and the layout is one row:
+ * the job on the left, temperatures on the right. The scrim is not decoration
+ * — white text over a brightly lit print bed is unreadable exactly when the
+ * print is most worth looking at, and a gradient keeps the picture visible
+ * where the text is not.
+ */
+.print-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 3vh;
+  padding: 2vh 3vh 3vh;
+  background: linear-gradient(rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.print-overlay-job,
+.print-overlay-temps {
+  display: flex;
+  align-items: baseline;
+  gap: 2.5vh;
+}
+
+.print-overlay-name {
+  font-size: 3vh;
+  font-weight: 600;
+}
+
+.print-overlay-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6vh;
+}
+
+.print-overlay-label {
+  color: var(--muted);
+  font-size: 1.7vh;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.print-overlay-value {
+  font-size: 2.2vh;
+  /* Times and temperatures change every poll; proportional digits would make
+     the whole row shuffle sideways each time. */
+  font-variant-numeric: tabular-nums;
+}
+
+.print-overlay-note {
+  color: var(--muted);
+  font-size: 2vh;
+}

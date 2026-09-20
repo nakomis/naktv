@@ -3,7 +3,9 @@ import { CONFIG } from '../../config';
 import { getSettings } from '../../settings';
 import { seekToLiveEdge } from './liveEdge';
 import { connectMse } from './mseClient';
+import { PrintOverlay } from './PrintOverlay';
 import { useMjpegFeed } from './useMjpegFeed';
+import { useOctoPrint } from './useOctoPrint';
 import { useVideoFeed } from './useVideoFeed';
 
 /**
@@ -31,6 +33,10 @@ function MjpegFeed() {
 export function PrinterCam() {
   const video = useVideoFeed(CONFIG.printerCam, getSettings().go2rtcHost);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const showOverlay = getSettings().showPrintOverlay;
+  // Polling is skipped entirely when the overlay is off, so a disabled
+  // feature costs nothing on the wire or on Leia.
+  const printStatus = useOctoPrint(showOverlay);
 
   // The element has to start muted or webOS won't autoplay it unattended, but
   // the stream carries a Spotify audio track that a muted element would throw
@@ -63,6 +69,7 @@ export function PrinterCam() {
 
   return (
     <div className="printer-cam">
+      {showOverlay && <PrintOverlay status={printStatus} />}
       {video.mode === 'video' && video.mseUrl ? (
         <video
           ref={videoRef}
