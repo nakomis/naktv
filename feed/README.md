@@ -98,6 +98,7 @@ Two failure modes, both of which look like something else:
    the audio track, and on a muxed stream a stalled track can take the picture
    with it. The pacer substitutes silence.
 
+
 ### Why the audio input also needs `-use_wallclock_as_timestamps`
 
 The video producer stamps frames with the wall clock, because Leia's MJPEG
@@ -106,6 +107,29 @@ would number the audio from zero — and the two tracks then sit on completely
 different timelines. Muxed together, the player locks onto one and the other's
 frames look far out of range, so they are never rendered: **sound plays and the
 picture never appears**. Both inputs must use the same clock.
+### Why the audio input also needs `-af aresample=async=1`
+
+The wallclock stamps record when ffmpeg happened to read the pipe, not when the
+samples were generated, so consecutive packets can arrive fractionally out of
+order. ffmpeg then logs `Queue input is backward in time` and `Non-monotonic
+DTS` for every packet and rewrites the timestamps itself.
+
+On a muxed stream that does not stay contained in the audio track: the player
+stalls waiting on audio and jumps to catch up, so the *picture* hangs a second
+at a time and the live-edge chase starts firing. Resampling to a continuous
+timeline keeps the wallclock base the video is aligned to whilst making the
+output strictly monotonic.
+### Why `spotify-connect.sh` supervises librespot
+
+librespot logged `Connection to server closed.` and then sat for forty minutes,
+still running and still advertising over mDNS, but with no session. Spotify
+listed the device, claimed to be playing to it, and produced silence — a state
+in which every process check reports health.
+
+The loop restarts the pipeline on exit. That does not detect a live-but-
+sessionless librespot by itself, but it makes recovery a one-liner from
+anywhere: `pkill -f "librespot --name NakTV"` brings up a clean instance,
+instead of needing whoever started the script to press Ctrl-C.
 
 ### Why `spotify-connect.sh` kills its own process group
 
@@ -136,11 +160,12 @@ Do **not** kill the process — nothing would restart it.
 feed/bin/spotify-connect.sh
 ```
 
-Both it and go2rtc must be started from a **GUI terminal, never over ssh**:
-discovery is mDNS and the camera is on the LAN, and macOS Local Network Privacy
-denies LAN access to anything launched from an ssh session. The symptoms are a
-Connect device that never appears, and `Connection to <camera> failed: No route
-to host` — neither of which looks like a permissions problem.
+Both need macOS **Local Network permission**, which an *interactive* terminal
+has once it has been granted — including an interactive ssh session — but a
+detached, non-interactive `ssh host 'cmd'` does not. Started that way, go2rtc
+and everything it spawns cannot reach the LAN: the symptoms are a Connect
+device that never appears and `Connection to <camera> failed: No route to
+host`, neither of which looks like a permissions problem.
 
 If the pipe is missing, `spotify-audio.sh` exits rather than blocking forever on
 open, so go2rtc serves `printer_av` as video-only. That still plays; there is

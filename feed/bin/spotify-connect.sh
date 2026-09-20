@@ -42,16 +42,37 @@ echo "PCM pipe               : $FIFO"
 echo "librespot log          : $LIBRESPOT_LOG"
 echo "Ctrl-C to stop."
 
-set -m
-"$LIBRESPOT_BIN" \
-    --name "$DEVICE_NAME" \
-    --backend pipe \
-    --bitrate "$BITRATE" \
-    --initial-volume "$INITIAL_VOLUME" \
-    2>>"$LIBRESPOT_LOG" \
-  | "$PYTHON_BIN" "$PACER" --output "$FIFO" &
+# Supervised, because librespot is not reliable enough to run unattended.
+# Observed: it logged "Connection to server closed." and then sat there for
+# forty minutes, still running and still advertising over mDNS, but with no
+# session. Spotify listed the device, claimed to be playing to it, and produced
+# silence — a state in which every process check says everything is fine.
+#
+# Restarting on exit does not detect that case by itself, but it does make
+# recovery a one-liner from anywhere: `pkill -f "librespot --name NakTV"` and
+# this loop brings up a clean instance, instead of needing whoever started the
+# script to go and press Ctrl-C.
+stopping=0
+trap 'stopping=1' INT TERM
 
-PGID=$!
-# shellcheck disable=SC2064
-trap "kill -- -$PGID 2>/dev/null" EXIT INT TERM
-wait "$PGID"
+while true; do
+  set -m
+  "$LIBRESPOT_BIN" \
+      --name "$DEVICE_NAME" \
+      --backend pipe \
+      --bitrate "$BITRATE" \
+      --initial-volume "$INITIAL_VOLUME" \
+      2>>"$LIBRESPOT_LOG" \
+    | "$PYTHON_BIN" "$PACER" --output "$FIFO" &
+
+  PGID=$!
+  # shellcheck disable=SC2064
+  trap "kill -- -$PGID 2>/dev/null" EXIT
+  wait "$PGID"
+  rc=$?
+
+  [[ $stopping -eq 1 ]] && break
+  echo "$(date '+%H:%M:%S') librespot pipeline exited (rc=$rc); restarting in 2s" \
+    | tee -a "$LIBRESPOT_LOG"
+  sleep 2
+done
