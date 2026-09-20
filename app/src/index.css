@@ -261,3 +261,18 @@ body {
   color: var(--muted);
   font-size: 2vh;
 }
+
+/*
+ * Settings rows. Only one row has focus at a time, and Up/Down move between
+ * them — so the focused row needs to be obvious from the sofa, and the
+ * selected octet must only look selected whilst the address is being edited.
+ */
+.setting {
+  border-left: 0.4vh solid transparent;
+  padding-left: 1.5vh;
+  margin-bottom: 2vh;
+}
+
+.setting.focused {
+  border-left-color: var(--fg);
+}
