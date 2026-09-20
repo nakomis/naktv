@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react';
 import { CONFIG } from '../../config';
 import { getSettings } from '../../settings';
+import { seekToLiveEdge } from './liveEdge';
 import { useMjpegFeed } from './useMjpegFeed';
 import { useVideoFeed } from './useVideoFeed';
 
@@ -27,11 +29,23 @@ function MjpegFeed() {
 
 export function PrinterCam() {
   const video = useVideoFeed(CONFIG.printerCam, getSettings().go2rtcHost);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Keep the player near the live edge; see liveEdge.ts for why it drifts.
+  useEffect(() => {
+    if (video.mode !== 'video') return;
+    const timer = setInterval(() => {
+      const element = videoRef.current;
+      if (element) seekToLiveEdge(element, CONFIG.printerCam);
+    }, CONFIG.printerCam.liveEdgeCheckMs);
+    return () => clearInterval(timer);
+  }, [video.mode]);
 
   return (
     <div className="printer-cam">
       {video.mode === 'video' && video.videoSrc ? (
         <video
+          ref={videoRef}
           // muted + autoPlay + playsInline is what lets webOS start it unattended.
           src={video.videoSrc}
           autoPlay

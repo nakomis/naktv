@@ -102,6 +102,10 @@ body {
   display: block;
   /* The TV composites video on its own plane; black keeps the edges clean. */
   background: #000;
+  /* The camera hangs upside down under its mount and has no flip control of
+     its own, so both axes are flipped here — the same thing OctoPrint does in
+     its own UI. A 180° rotation is exactly flipH + flipV. */
+  transform: rotate(180deg);
 }
 
 .feed-status {

@@ -43,6 +43,12 @@ export const CONFIG = {
     videoTimeoutMs: 8000,
     /** How long to sit on the MJPEG fallback before retrying H.264. */
     videoRetryMs: 2 * 60 * 1000,
+    /** Lag past which the player skips forward to the live edge. */
+    liveEdgeMaxLagMs: 1500,
+    /** How far behind the buffered end to land after skipping. */
+    liveEdgeTargetMs: 300,
+    /** How often to check the lag. */
+    liveEdgeCheckMs: 1000,
   },
   /** How long the tab strip stays up after the last keypress. */
   stripHideDelayMs: 4000,
