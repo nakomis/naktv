@@ -9,10 +9,15 @@ deployed anywhere permanent.
 Leia (mjpg-streamer, 1080p15 MJPEG)
         |
         v
-    ffmpeg  -- H.264 ------.
-                            >--  go2rtc  "printer_av"  --> TV: one <video>
-    librespot -> pacer -----'                                (video + audio)
-              -> ffmpeg -- AAC
+    ffmpeg -- H.264 -------------.
+                                  >-- go2rtc "printer_av" --> TV: one <video>
+    ffmpeg -- AAC ---------------'                            (video + audio)
+        ^                             [ go2rtc restarts these freely ]
+        | reads
+   /tmp/naktv-spotify.pcm  (named pipe)
+        ^
+        | writes, paced
+    librespot -> pcm-pacer.py         [ long-lived, independent of go2rtc ]
 ```
 
 ## Why the audio is muxed into the video
@@ -63,8 +68,22 @@ is sound as well.
 | File | Role |
 |---|---|
 | `go2rtc.yaml` | Stream definitions: `printer` (video only) and `printer_av` (video + Spotify) |
-| `bin/spotify-audio.sh` | go2rtc audio producer: librespot → pacer → AAC → RTSP |
-| `bin/pcm-pacer.py` | Paces librespot's output to real time and pads silence when idle |
+| `bin/spotify-connect.sh` | **Long-lived**: librespot → pacer → named pipe. Started by hand, outlives go2rtc |
+| `bin/spotify-audio.sh` | go2rtc audio producer: named pipe → AAC → RTSP. Restartable at will |
+| `bin/pcm-pacer.py` | Paces to real time, pads silence when idle, and owns the pipe |
+
+### Why librespot is not a go2rtc producer
+
+go2rtc starts and stops producers whenever the last consumer comes or goes — an
+app reload, a tab switch, a sideload, a network blip. With librespot as a child
+of that producer, every one of those events minted a *new* Connect device and
+left Spotify talking to a dead one, so pressing play did nothing, silently.
+
+Splitting them fixes it. The pacer opens the pipe **read-write**, so it never
+sees EOF or a broken pipe however often the ffmpeg on the other end restarts,
+and writes non-blocking, so with nothing reading the audio is dropped rather
+than backing up into librespot and stalling playback. go2rtc can then restart
+its side as often as it likes and the Spotify session is undisturbed.
 
 ### Why the pacer exists
 
@@ -88,14 +107,18 @@ different timelines. Muxed together, the player locks onto one and the other's
 frames look far out of range, so they are never rendered: **sound plays and the
 picture never appears**. Both inputs must use the same clock.
 
-### Why `spotify-audio.sh` kills its own process group
+### Why `spotify-connect.sh` kills its own process group
 
 librespot does **not** exit when its output pipe breaks. It logs `Audio Sink
-Error On Write: Broken pipe` and carries on, still advertising over mDNS. Every
-restart of the producer therefore leaks an orphan still claiming the device
-name. Two devices called "NakTV" then appear identical in Spotify, and picking
-the dead one does nothing at all — silently. Hence `set -m`, the trap, and the
-startup sweep.
+Error On Write: Broken pipe` and carries on, still advertising over mDNS. A
+restart that leaves one behind therefore leaks an orphan still claiming the
+device name. Two devices called "NakTV" then appear identical in Spotify, and
+picking the dead one does nothing at all — silently. Hence `set -m`, the trap,
+and the sweep at startup.
+
+Splitting librespot out of the producer makes this far rarer, since only a
+deliberate restart of the Connect endpoint can trigger it, but the guard stays:
+the failure is invisible from Spotify's side and maddening to diagnose.
 
 ## Operating it
 
@@ -107,11 +130,21 @@ curl -X POST http://127.0.0.1:1984/api/restart
 
 Do **not** kill the process — nothing would restart it.
 
-Note that go2rtc starts producers lazily and stops them when the last consumer
-disconnects, so librespot only advertises whilst something is watching
-`printer_av`. Reconnecting the stream restarts librespot and invalidates the
-Connect device. A persistent librespot, decoupled from go2rtc's consumer
-lifecycle, is the obvious next improvement.
+`bin/spotify-connect.sh` is started separately and by hand:
+
+```bash
+feed/bin/spotify-connect.sh
+```
+
+Both it and go2rtc must be started from a **GUI terminal, never over ssh**:
+discovery is mDNS and the camera is on the LAN, and macOS Local Network Privacy
+denies LAN access to anything launched from an ssh session. The symptoms are a
+Connect device that never appears, and `Connection to <camera> failed: No route
+to host` — neither of which looks like a permissions problem.
+
+If the pipe is missing, `spotify-audio.sh` exits rather than blocking forever on
+open, so go2rtc serves `printer_av` as video-only. That still plays; there is
+simply no sound until the Connect endpoint is running.
 
 ## Moving to another host
 
