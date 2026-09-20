@@ -47,6 +47,14 @@ if [[ $force -eq 0 ]] && ! grep -q "$PLACEHOLDER" "$SECRETS"; then
   exit 0
 fi
 
+# CI deliberately never reads the key. The .ipk is not published, so CI has no
+# need of it, and not fetching it is a stronger guarantee than trusting that
+# the artefact goes nowhere. The placeholder is enough to compile against.
+if [[ -n ${CI:-} ]]; then
+  echo "set-config: CI detected; keeping the placeholder deliberately"
+  exit 0
+fi
+
 if ! command -v aws >/dev/null 2>&1; then
   echo "set-config: no aws CLI; keeping the placeholder"
   exit 0
