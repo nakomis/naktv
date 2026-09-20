@@ -34,7 +34,16 @@ if [[ ! -p "$FIFO" ]]; then
 fi
 
 log "=== audio producer starting, output=$OUT ==="
+# -af aresample=async=1: the wallclock stamps arrive with the jitter of when
+# ffmpeg happened to read the pipe, not when the samples were generated, so
+# consecutive packets can land out of order. ffmpeg then logs "Queue input is
+# backward in time" and "Non-monotonic DTS" for every packet and rewrites the
+# timestamps itself. On a muxed stream that unsettles the video too: the player
+# stalls waiting on audio and then jumps to catch up. Resampling to a
+# continuous timeline keeps the wallclock base the video is aligned to whilst
+# making the output strictly monotonic.
 exec "$FFMPEG_BIN" -hide_banner -loglevel warning \
   -use_wallclock_as_timestamps 1 -f s16le -ar 44100 -ac 2 -i "$FIFO" \
+  -af aresample=async=1 \
   -c:a aac -b:a "$AUDIO_BITRATE" -ar 48000 -ac 2 \
   -rtsp_transport tcp -f rtsp "$OUT" 2>>"$LOG"
