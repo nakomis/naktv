@@ -79,6 +79,15 @@ Two failure modes, both of which look like something else:
    the audio track, and on a muxed stream a stalled track can take the picture
    with it. The pacer substitutes silence.
 
+### Why the audio input also needs `-use_wallclock_as_timestamps`
+
+The video producer stamps frames with the wall clock, because Leia's MJPEG
+carries no timestamps of its own. Raw PCM on a pipe has none either, so ffmpeg
+would number the audio from zero — and the two tracks then sit on completely
+different timelines. Muxed together, the player locks onto one and the other's
+frames look far out of range, so they are never rendered: **sound plays and the
+picture never appears**. Both inputs must use the same clock.
+
 ### Why `spotify-audio.sh` kills its own process group
 
 librespot does **not** exit when its output pipe breaks. It logs `Audio Sink

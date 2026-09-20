@@ -54,7 +54,7 @@ set -m
     2>>"$LIBRESPOT_LOG" \
   | "$PYTHON_BIN" "$PACER" 2>>"$LOG" \
   | "$FFMPEG_BIN" -hide_banner -loglevel warning \
-      -f s16le -ar 44100 -ac 2 -i pipe:0 \
+      -use_wallclock_as_timestamps 1 -f s16le -ar 44100 -ac 2 -i pipe:0 \
       -c:a aac -b:a "$AUDIO_BITRATE" -ar 48000 -ac 2 \
       -rtsp_transport tcp -f rtsp "$OUT" 2>>"$LOG" &
 

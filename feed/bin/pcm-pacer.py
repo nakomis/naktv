@@ -67,7 +67,7 @@ def main() -> None:
                 break
             pending.extend(data)
 
-        frame = bytes(pending[: len(pending) if len(pending) < CHUNK else CHUNK])
+        frame = bytes(pending[:CHUNK])
         del pending[: len(frame)]
         if len(frame) < CHUNK:
             frame += silence[len(frame) :]
