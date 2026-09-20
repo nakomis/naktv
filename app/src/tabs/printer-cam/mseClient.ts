@@ -16,8 +16,17 @@
 /** Codecs we advertise to go2rtc. High profile first — it is what phi encodes. */
 const CODECS = 'avc1.640029,avc1.42E01E,mp4a.40.2';
 
-/** Dropped rather than queued without bound if the decoder falls behind. */
-const MAX_QUEUED_SEGMENTS = 40;
+/**
+ * A queue this deep means we are not keeping up at all.
+ *
+ * Segments are never dropped to trim it: dropping one that has not been
+ * appended punches a hole in the buffer, and MSE does not skip holes — the
+ * playhead reaches it and stalls there indefinitely, with data buffered on
+ * the far side it will never reach. That is worth a reconnect instead, which
+ * starts cleanly at the live edge. Latency is the live-edge chase's job
+ * (liveEdge.ts), not this one's.
+ */
+const MAX_QUEUED_SEGMENTS = 120;
 
 /** Seconds of already-played buffer to keep before evicting. */
 const BUFFER_KEEP_SECONDS = 20;
@@ -80,12 +89,48 @@ export function connectMse(
     handlers.onError?.(reason);
   };
 
+  /**
+   * Jump the playhead forward when it is stranded outside every buffered
+   * range.
+   *
+   * A feed that comes and goes — phi asleep, a flaky link — leaves holes in
+   * the buffer, and MSE will not skip one: playback stops at the hole with
+   * data buffered beyond it that it will never reach, and stays there until
+   * the app is relaunched by hand.
+   *
+   * Being outside every range is unambiguous: playback cannot proceed from
+   * there under any circumstances, so moving to the next range is always
+   * right. That makes this safe to check on a timer without tracking progress
+   * — which matters, because currentTime is nudged by the live-edge chase and
+   * is not a trustworthy progress signal on this TV.
+   */
+  const skipGapIfStranded = (): boolean => {
+    const ranges = video.buffered;
+    if (!ranges.length) return false;
+
+    for (let i = 0; i < ranges.length; i += 1) {
+      if (video.currentTime >= ranges.start(i) && video.currentTime < ranges.end(i)) {
+        return false;
+      }
+    }
+
+    for (let i = 0; i < ranges.length; i += 1) {
+      if (ranges.start(i) > video.currentTime) {
+        // A shade past the boundary: landing exactly on it can strand us again.
+        video.currentTime = ranges.start(i) + 0.05;
+        return true;
+      }
+    }
+    return false;
+  };
+
   /** Watches segment arrival, because a silently stopped stream fires nothing. */
   let lastSegmentAt = Date.now();
   const startWatchdog = () => {
     lastSegmentAt = Date.now();
     stallTimer = setInterval(() => {
       if (closed) return;
+      if (skipGapIfStranded()) return;
       if (Date.now() - lastSegmentAt >= STALL_LIMIT_MS) fail('stalled');
     }, STALL_CHECK_MS);
   };
@@ -164,10 +209,9 @@ export function connectMse(
 
       lastSegmentAt = Date.now();
       queue.push(event.data as ArrayBuffer);
-      // Falling behind is better handled by dropping stale segments than by
-      // growing without bound; liveEdge.ts then pulls us back to the live edge.
       if (queue.length > MAX_QUEUED_SEGMENTS) {
-        queue.splice(0, queue.length - MAX_QUEUED_SEGMENTS / 2);
+        fail('queue overflow');
+        return;
       }
       flush();
     };

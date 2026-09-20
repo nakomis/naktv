@@ -64,15 +64,24 @@ class FakeSocket {
   }
 }
 
-function makeVideo(): HTMLVideoElement {
+/** A TimeRanges stand-in, since jsdom's buffered is empty and read-only. */
+function ranges(pairs: Array<[number, number]>): TimeRanges {
+  return {
+    length: pairs.length,
+    start: (i: number) => pairs[i][0],
+    end: (i: number) => pairs[i][1],
+  } as unknown as TimeRanges;
+}
+
+function makeVideo(currentTime = 90, buffered: Array<[number, number]> = []): HTMLVideoElement {
   const video = document.createElement('video');
-  Object.defineProperty(video, 'currentTime', { value: 90, writable: true });
+  Object.defineProperty(video, 'currentTime', { value: currentTime, writable: true });
+  Object.defineProperty(video, 'buffered', { value: ranges(buffered), writable: true });
   return video;
 }
 
 /** Drives a connection up to the point where a SourceBuffer exists. */
-function openStream() {
-  const video = makeVideo();
+function openStream(video: HTMLVideoElement = makeVideo()) {
   const onError = vi.fn();
   const onPlaying = vi.fn();
   const connection = connectMse(video, 'ws://phi:1984/api/ws?src=printer_av', {
@@ -204,6 +213,69 @@ describe('connectMse', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // A feed that comes and goes leaves holes, and MSE will not skip one: the
+  // playhead stops at the hole with data buffered beyond it, forever.
+  it('jumps the playhead over a gap it is stranded in', () => {
+    vi.useFakeTimers();
+    try {
+      // Stranded at 50: buffered data sits behind it and ahead of it.
+      const video = makeVideo(50, [
+        [10, 40],
+        [60, 90],
+      ]);
+      const { onError } = openStream(video);
+      reply();
+
+      vi.advanceTimersByTime(2500);
+
+      expect(video.currentTime).toBeCloseTo(60.05, 2);
+      // Recovering is not a failure; the feed should not be torn down.
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves the playhead alone when it is inside a buffered range', () => {
+    vi.useFakeTimers();
+    try {
+      const video = makeVideo(50, [[10, 90]]);
+      openStream(video);
+      reply();
+      vi.advanceTimersByTime(2500);
+      expect(video.currentTime).toBe(50);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not jump backwards when every range is behind the playhead', () => {
+    vi.useFakeTimers();
+    try {
+      const video = makeVideo(95, [[10, 90]]);
+      openStream(video);
+      reply();
+      vi.advanceTimersByTime(2500);
+      expect(video.currentTime).toBe(95);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Dropping queued segments to trim the backlog is what created the gaps in
+  // the first place, so falling this far behind reconnects instead.
+  it('reports overflow rather than silently dropping segments', () => {
+    const { onError } = openStream();
+    reply();
+    const buffer = FakeMediaSource.last?.buffers[0];
+    if (buffer) buffer.updating = true; // nothing can drain whilst appending
+
+    for (let i = 0; i < 200; i += 1) {
+      FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: new ArrayBuffer(4) }));
+    }
+    expect(onError).toHaveBeenCalledWith('queue overflow');
   });
 
   it('falls back immediately where MediaSource is missing', async () => {
