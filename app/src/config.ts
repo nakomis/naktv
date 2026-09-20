@@ -16,13 +16,27 @@ import { getSettings } from './settings';
 
 const LEIA = 'http://172.29.0.32:8090';
 const GO2RTC_PORT = 1984;
-const GO2RTC_STREAM = 'printer';
+
+// `printer_av` is the printer video with a Spotify audio track muxed in, so the
+// TV plays both from a single media element. That is not a convenience: webOS
+// allows an app exactly one media element, and a <video> and a separate <audio>
+// force-pause each other — a platform rule, not a DRM one. See feed/README.md.
+//
+// `printer` (video only) is still served, and is the right source for anything
+// that doesn't want sound.
+const GO2RTC_STREAM = 'printer_av';
 
 /** go2rtc URLs for the currently configured host (Settings tab). */
 export function go2rtcUrls(host: string = getSettings().go2rtcHost) {
   const base = `http://${host}:${GO2RTC_PORT}`;
   return {
-    /** Progressive fMP4 — plays in a plain <video> on Chromium 108. */
+    /**
+     * go2rtc's MSE WebSocket. The only transport this TV will play both the
+     * video and the muxed Spotify audio from: progressive fMP4 renders no
+     * picture once an audio track is present, and HLS is refused outright.
+     */
+    mseUrl: `ws://${host}:${GO2RTC_PORT}/api/ws?src=${GO2RTC_STREAM}`,
+    /** Progressive fMP4. Video-only; kept for the stream without audio. */
     mp4Url: `${base}/api/stream.mp4?src=${GO2RTC_STREAM}`,
     /** Single frame, for the connection check before we commit to the video. */
     frameUrl: `${base}/api/frame.jpeg?src=${GO2RTC_STREAM}`,

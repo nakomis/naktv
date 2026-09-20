@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { CONFIG } from '../../config';
 import { getSettings } from '../../settings';
 import { seekToLiveEdge } from './liveEdge';
+import { connectMse } from './mseClient';
 import { useMjpegFeed } from './useMjpegFeed';
 import { useVideoFeed } from './useVideoFeed';
 
@@ -31,6 +32,25 @@ export function PrinterCam() {
   const video = useVideoFeed(CONFIG.printerCam, getSettings().go2rtcHost);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  // The element has to start muted or webOS won't autoplay it unattended, but
+  // the stream carries a Spotify audio track that a muted element would throw
+  // away. So unmute once frames are actually flowing. Doing it on `playing`
+  // rather than up front keeps the autoplay behaviour that got us here.
+  const handlePlaying = useCallback(() => {
+    video.onPlaying();
+    const element = videoRef.current;
+    if (element) element.muted = false;
+  }, [video]);
+
+  // The feed arrives over MSE rather than as a plain src: it is the only
+  // transport this TV plays both the video and the muxed audio from.
+  useEffect(() => {
+    const element = videoRef.current;
+    if (video.mode !== 'video' || !video.mseUrl || !element) return;
+    const connection = connectMse(element, video.mseUrl, { onError: video.onError });
+    return () => connection.close();
+  }, [video.mode, video.mseUrl, video.onError]);
+
   // Keep the player near the live edge; see liveEdge.ts for why it drifts.
   useEffect(() => {
     if (video.mode !== 'video') return;
@@ -43,16 +63,17 @@ export function PrinterCam() {
 
   return (
     <div className="printer-cam">
-      {video.mode === 'video' && video.videoSrc ? (
+      {video.mode === 'video' && video.mseUrl ? (
         <video
           ref={videoRef}
-          // muted + autoPlay + playsInline is what lets webOS start it unattended.
-          src={video.videoSrc}
+          // No src: connectMse attaches the MediaSource. muted + autoPlay +
+          // playsInline is what lets webOS start it unattended, and
+          // handlePlaying unmutes it again once it has.
           autoPlay
           muted
           playsInline
           aria-label="3D printer camera"
-          onPlaying={video.onPlaying}
+          onPlaying={handlePlaying}
           onError={video.onError}
         />
       ) : (
