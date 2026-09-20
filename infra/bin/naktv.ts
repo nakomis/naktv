@@ -23,7 +23,7 @@ new GithubCiStack(app, 'NaktvGithubCiStack', {
   githubOwnerId: '1488244',
   githubRepo: 'naktv',
   // `gh api repos/nakomis/naktv --jq .id`
-  githubRepoId: 'REPO_ID_PENDING',
+  githubRepoId: '1378383313',
   description: `GitHub Actions OIDC role for naktv CI (${deployEnv})`,
 });
 
