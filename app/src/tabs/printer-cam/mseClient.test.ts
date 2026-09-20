@@ -171,6 +171,41 @@ describe('connectMse', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  // go2rtc restarting a producer leaves the socket open and simply stops
+  // sending, so nothing fires an error and the picture freezes silently.
+  it('reports a stall when segments stop arriving', () => {
+    vi.useFakeTimers();
+    try {
+      const { onError } = openStream();
+      reply();
+
+      vi.advanceTimersByTime(4000);
+      expect(onError).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(8000);
+      expect(onError).toHaveBeenCalledWith('stalled');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // currentTime is deliberately NOT the signal: seekToLiveEdge nudges it every
+  // second, which would mask exactly the stall we are trying to catch.
+  it('does not report a stall while segments keep arriving', () => {
+    vi.useFakeTimers();
+    try {
+      const { onError } = openStream();
+      reply();
+      for (let tick = 0; tick < 10; tick += 1) {
+        FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: new ArrayBuffer(4) }));
+        vi.advanceTimersByTime(2000);
+      }
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('falls back immediately where MediaSource is missing', async () => {
     vi.stubGlobal('MediaSource', undefined);
     const onError = vi.fn();

@@ -40,6 +40,21 @@ describe('PrinterCam', () => {
     await act(async () => {});
   };
 
+  /**
+   * Fail the stream until the retries are spent. The feed reconnects a few
+   * times before conceding, so a single error no longer reaches the fallback.
+   */
+  const exhaustRetries = () => {
+    for (let attempt = 0; attempt <= 3; attempt += 1) {
+      const video = screen.queryByLabelText('3D printer camera');
+      if (!video) return;
+      act(() => {
+        fireEvent.error(video);
+        vi.advanceTimersByTime(CONFIG.printerCam.reconnectDelayMs + 10);
+      });
+    }
+  };
+
   it('starts on the go2rtc MSE stream from the configured host', async () => {
     render(<PrinterCam />);
     await settle();
@@ -77,20 +92,30 @@ describe('PrinterCam', () => {
     expect(socketUrls[0]).toContain('10.0.0.9');
   });
 
-  it('falls back to the MJPEG feed when the video errors', () => {
+  it('reconnects rather than falling back on a single failure', () => {
     render(<PrinterCam />);
     act(() => {
       fireEvent.error(screen.getByLabelText('3D printer camera'));
+      vi.advanceTimersByTime(CONFIG.printerCam.reconnectDelayMs + 10);
     });
+    expect(screen.getByLabelText('3D printer camera').tagName).toBe('VIDEO');
+  });
+
+  it('falls back to the MJPEG feed once the reconnects are spent', () => {
+    render(<PrinterCam />);
+    exhaustRetries();
     const img = screen.getByRole('img', { name: '3D printer camera' });
     expect(img.getAttribute('src')).toContain(CONFIG.printerCam.streamUrl);
   });
 
   it('falls back when the video never starts playing', () => {
     render(<PrinterCam />);
-    act(() => {
-      vi.advanceTimersByTime(CONFIG.printerCam.videoTimeoutMs + 100);
-    });
+    for (let attempt = 0; attempt <= 3; attempt += 1) {
+      act(() => {
+        vi.advanceTimersByTime(CONFIG.printerCam.videoTimeoutMs + 100);
+        vi.advanceTimersByTime(CONFIG.printerCam.reconnectDelayMs + 10);
+      });
+    }
     expect(screen.getByRole('img', { name: '3D printer camera' })).toBeInTheDocument();
   });
 
@@ -105,9 +130,7 @@ describe('PrinterCam', () => {
 
   it('retries H.264 after a spell on the fallback', () => {
     render(<PrinterCam />);
-    act(() => {
-      fireEvent.error(screen.getByLabelText('3D printer camera'));
-    });
+    exhaustRetries();
     expect(screen.getByRole('img', { name: '3D printer camera' })).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(CONFIG.printerCam.videoRetryMs + 100);

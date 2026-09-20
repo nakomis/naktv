@@ -22,6 +22,24 @@ const MAX_QUEUED_SEGMENTS = 40;
 /** Seconds of already-played buffer to keep before evicting. */
 const BUFFER_KEEP_SECONDS = 20;
 
+/** How often to check that playback is still progressing. */
+const STALL_CHECK_MS = 2000;
+
+/**
+ * How long the socket may go without delivering a segment before we call the
+ * stream dead.
+ *
+ * A producer restart on the go2rtc side leaves the socket open and simply
+ * stops sending, so nothing fires an error and the picture freezes silently
+ * until someone relaunches the app.
+ *
+ * Deliberately measured on segment arrival rather than on currentTime:
+ * seekToLiveEdge nudges currentTime once a second, which resets a
+ * progress-based clock and hides the very stall we are looking for. Arrival is
+ * also the thing that actually stops, so it is the honest signal.
+ */
+const STALL_LIMIT_MS = 8000;
+
 export interface MseHandlers {
   /** Fired once media is actually flowing. */
   onPlaying?: () => void;
@@ -47,12 +65,29 @@ export function connectMse(
   let sourceBuffer: SourceBuffer | undefined;
   let objectUrl: string | undefined;
   let closed = false;
+  let stallTimer: ReturnType<typeof setInterval> | undefined;
 
   const queue: ArrayBuffer[] = [];
 
+  const stopWatchdog = () => {
+    if (stallTimer !== undefined) clearInterval(stallTimer);
+    stallTimer = undefined;
+  };
+
   const fail = (reason: string) => {
     if (closed) return;
+    stopWatchdog();
     handlers.onError?.(reason);
+  };
+
+  /** Watches segment arrival, because a silently stopped stream fires nothing. */
+  let lastSegmentAt = Date.now();
+  const startWatchdog = () => {
+    lastSegmentAt = Date.now();
+    stallTimer = setInterval(() => {
+      if (closed) return;
+      if (Date.now() - lastSegmentAt >= STALL_LIMIT_MS) fail('stalled');
+    }, STALL_CHECK_MS);
   };
 
   if (typeof MediaSource === 'undefined') {
@@ -119,6 +154,7 @@ export function connectMse(
           sourceBuffer = mediaSource.addSourceBuffer(message.value);
           sourceBuffer.mode = 'segments';
           sourceBuffer.addEventListener('updateend', flush);
+          startWatchdog();
           handlers.onPlaying?.();
         } catch (error) {
           fail(`addSourceBuffer: ${(error as Error).name}`);
@@ -126,6 +162,7 @@ export function connectMse(
         return;
       }
 
+      lastSegmentAt = Date.now();
       queue.push(event.data as ArrayBuffer);
       // Falling behind is better handled by dropping stale segments than by
       // growing without bound; liveEdge.ts then pulls us back to the live edge.
@@ -139,6 +176,7 @@ export function connectMse(
   return {
     close: () => {
       closed = true;
+      stopWatchdog();
       try {
         socket?.close();
       } catch {
