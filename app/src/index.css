@@ -1,0 +1,133 @@
+/*
+ * Plain CSS on purpose: the B3 runs Chromium 108, which predates the
+ * @property / color-mix() support Tailwind 4 needs (Chrome 111+).
+ * Sizes are in vh so the layout is the same at 1080p and 4K.
+ */
+:root {
+  --bg: #000;
+  --fg: #f2f2f2;
+  --muted: #8a8a8a;
+  --strip-bg: rgba(12, 12, 12, 0.82);
+  --tab-active-bg: #f2f2f2;
+  --tab-active-fg: #0a0a0a;
+  --live: #d33;
+  --fade: 300ms ease;
+  font-family: "LG Smart UI", "Helvetica Neue", Arial, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+body {
+  cursor: none;
+}
+
+.shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.tab-panel {
+  position: absolute;
+  inset: 0;
+}
+
+.tab-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 1.5vh;
+  padding: 2.2vh 3vh;
+  background: linear-gradient(var(--strip-bg), transparent);
+  transition:
+    opacity var(--fade),
+    transform var(--fade);
+}
+
+.tab-strip.hidden {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+.tab-strip .brand {
+  font-weight: 700;
+  font-size: 3vh;
+  margin-right: 2vh;
+  letter-spacing: 0.05em;
+}
+
+.tab {
+  font: inherit;
+  font-size: 2.6vh;
+  color: var(--fg);
+  background: transparent;
+  border: 0.3vh solid transparent;
+  border-radius: 999px;
+  padding: 0.8vh 2.4vh;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-fg);
+}
+
+.printer-cam {
+  position: absolute;
+  inset: 0;
+}
+
+.printer-cam img {
+  width: 100%;
+  height: 100%;
+  /* Scale the 720p feed up to the whole screen, letterboxed if need be. */
+  object-fit: contain;
+  display: block;
+}
+
+.feed-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted);
+  font-size: 2.5vh;
+  text-align: center;
+}
+
+.feed-status .dot {
+  display: inline-block;
+  width: 1.2vh;
+  height: 1.2vh;
+  margin-right: 0.8vh;
+  border-radius: 50%;
+  background: var(--live);
+  vertical-align: middle;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}

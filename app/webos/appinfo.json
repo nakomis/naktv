@@ -1,0 +1,14 @@
+{
+  "id": "com.nakomis.naktv",
+  "version": "0.0.0",
+  "vendor": "Nakomis",
+  "type": "web",
+  "main": "index.html",
+  "title": "NakTV",
+  "icon": "icon.png",
+  "largeIcon": "icon-large.png",
+  "bgColor": "#000000",
+  "iconColor": "#1a1a1a",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true
+}

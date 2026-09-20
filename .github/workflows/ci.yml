@@ -1,0 +1,301 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Check out the post-merge state on PRs so CI validates what will land on main,
+# not just the branch tip. Falls back to the commit SHA on push/workflow_dispatch.
+env:
+  CHECKOUT_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+  SANDBOX_ROLE_ARN: arn:aws:iam::975050268859:role/nakomis-naktv-github-ci-sandbox
+  PROD_ROLE_ARN: arn:aws:iam::637423226886:role/nakomis-naktv-github-ci-prod
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'app/**'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+            infra:
+              - 'infra/**'
+              - '.github/workflows/ci.yml'
+
+  app:
+    name: App
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/package.json
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      # Packages with the placeholder 0.0.0 version; the release job rebuilds
+      # with the tracker's version.
+      - name: Build and package
+        run: pnpm run package
+
+  infra:
+    name: Infra
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: infra/package.json
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+          cache-dependency-path: infra/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      # The stack does no context lookups, so synth needs no AWS credentials —
+      # which also means a PR can synth before the CI roles exist.
+      - name: CDK synth (sandbox)
+        run: pnpm ci-synth-sandbox --output cdk-synth.out
+
+  version:
+    name: Compute version
+    runs-on: ubuntu-latest
+    needs: [app, infra]
+    if: |
+      always()
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.PROD_ROLE_ARN }}
+          aws-region: eu-west-2
+      # Computed once; every later job uses this same artifact, never recomputes.
+      - name: Compute version
+        id: compute
+        uses: nakomis/nakomis-infra/.github/actions/compute-version@main
+        with:
+          project: naktv
+          environment: prod
+      - name: Upload version.json
+        uses: actions/upload-artifact@v7
+        with:
+          name: version
+          path: version.json
+
+  deploy-infra-sandbox:
+    name: Deploy infra — sandbox
+    runs-on: ubuntu-latest
+    needs: [changes, version]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch')
+    environment: sandbox
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: infra/package.json
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+          cache-dependency-path: infra/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: version
+          path: infra
+      - name: Configure AWS credentials (sandbox)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.SANDBOX_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Deploy to sandbox
+        run: pnpm ci-deploy-sandbox
+      - name: Record deployment
+        uses: nakomis/nakomis-infra/.github/actions/record-deployment@main
+        with:
+          project: naktv
+          environment: sandbox
+          version-file: infra/version.json
+
+  deploy-infra-prod:
+    name: Deploy infra — prod
+    runs-on: ubuntu-latest
+    needs: deploy-infra-sandbox
+    if: needs.deploy-infra-sandbox.result == 'success'
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: infra/package.json
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+          cache-dependency-path: infra/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.PROD_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Deploy to prod
+        run: pnpm ci-deploy-prod
+
+  # NakTV has no cloud deploy: the TV is on the LAN and is sideloaded from the
+  # Mac. A merge instead publishes the .ipk as a GitHub Release, which
+  # `scripts/install-tv.sh --latest` installs, and records that as the prod
+  # deployment in the tracker.
+  release:
+    name: Release .ipk
+    runs-on: ubuntu-latest
+    needs: [changes, version]
+    if: |
+      always()
+      && needs.version.result == 'success'
+      && (needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch')
+    permissions:
+      id-token: write
+      contents: write
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: app/package.json
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: 'pnpm'
+          cache-dependency-path: app/pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: version
+          path: app
+      - name: Build and package
+        run: pnpm run package
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v${VERSION}" build/com.nakomis.naktv_${VERSION}_all.ipk \
+            --target "${GITHUB_SHA}" --title "NakTV ${VERSION}" --generate-notes
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.PROD_ROLE_ARN }}
+          aws-region: eu-west-2
+      - name: Record deployment
+        uses: nakomis/nakomis-infra/.github/actions/record-deployment@main
+        with:
+          project: naktv
+          environment: prod
+          version-file: app/version.json
+
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    needs: [changes, app, infra, version, deploy-infra-sandbox, deploy-infra-prod, release]
+    if: always()
+    steps:
+      - name: Fail if any job failed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              exit 1
+            fi
+          done

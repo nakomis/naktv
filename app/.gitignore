@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.ipk
+
+# Generated at build time from the deployment tracker
+version.json
+
+# Planning
+PLAN.md
+
+# CDK
+cdk.out/
+*.out/
+
+# Coverage
+coverage/
+lcov.info
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
