@@ -102,9 +102,14 @@ body {
   display: block;
   /* The TV composites video on its own plane; black keeps the edges clean. */
   background: #000;
-  /* The camera hangs upside down under its mount and has no flip control of
-     its own, so both axes are flipped here — the same thing OctoPrint does in
-     its own UI. A 180° rotation is exactly flipH + flipV. */
+}
+
+/* The camera hangs upside down under its mount and has no flip control of its
+   own. The MJPEG fallback is rotated here; the H.264 feed is NOT, because
+   go2rtc already rotates it (#rotate=180) — webOS composites <video> on its
+   own hardware plane and ignores CSS transforms on it, so rotating both would
+   leave the fallback upside down on a client that does honour them. */
+.printer-cam img {
   transform: rotate(180deg);
 }
 
