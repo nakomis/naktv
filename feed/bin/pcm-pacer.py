@@ -39,8 +39,12 @@ import time
 RATE = 44100
 CHANNELS = 2
 SAMPLE_BYTES = 2
+# One interleaved sample for every channel. Everything emitted must be a whole
+# number of these: split one and every byte after it is interpreted half a
+# sample out, which comes out of the speakers as static and never recovers.
+FRAME = CHANNELS * SAMPLE_BYTES
 CHUNK_MS = 20
-CHUNK = int(RATE * CHUNK_MS / 1000) * CHANNELS * SAMPLE_BYTES
+CHUNK = int(RATE * CHUNK_MS / 1000) * FRAME
 
 # Never wait longer than this in a single select, so the tick stays responsive
 # even when the source has gone quiet mid-chunk.
@@ -118,14 +122,29 @@ def main() -> None:
                 break
             pending.extend(data)
 
-        frame = bytes(pending[:CHUNK])
-        del pending[: len(frame)]
+        # Whole frames only. A partial read is normal — os.read returns
+        # whatever has arrived — so the remainder is held back for the next
+        # tick rather than being padded across a frame boundary.
+        available = min(len(pending), CHUNK)
+        usable = available - (available % FRAME)
+        frame = bytes(pending[:usable])
+        del pending[:usable]
         if len(frame) < CHUNK:
             frame += silence[len(frame) :]
 
         try:
             write(frame)
         except BrokenPipeError:
+            break
+
+        # EOF on stdin means librespot has exited — it does not close the pipe
+        # merely to pause. Carrying on padding silence forever would keep the
+        # pipeline alive, so spotify-connect.sh's `wait` never returns and its
+        # supervision loop never restarts anything: `pkill librespot` would
+        # leave a Connect device that is gone but a process tree that looks
+        # healthy. Draining what is buffered and then exiting lets the
+        # supervisor do its job.
+        if eof and not pending:
             break
 
         delay = next_at - time.monotonic()
