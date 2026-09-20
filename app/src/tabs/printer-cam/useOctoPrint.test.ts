@@ -1,6 +1,27 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { CONFIG } from '../../config';
 import { toStatus, useOctoPrint } from './useOctoPrint';
+
+// The real config reads secrets.json, which is gitignored and populated from
+// SSM — so without this the suite would pass or fail depending on whether the
+// machine running it happens to have AWS credentials. CI has none by design.
+// Hoisted, because vi.mock's factory is lifted above ordinary top-level
+// declarations and would otherwise reference these before they exist.
+const { TEST_KEY, hasKey } = vi.hoisted(() => ({
+  TEST_KEY: 'test-api-key',
+  hasKey: vi.fn(() => true),
+}));
+
+vi.mock('../../config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../config')>();
+  return {
+    ...actual,
+    CONFIG: {
+      ...actual.CONFIG,
+      octoPrint: { ...actual.CONFIG.octoPrint, apiKey: TEST_KEY },
+    },
+    hasOctoPrintKey: () => hasKey(),
+  };
+});
 
 // Trimmed from what Leia actually returned mid-print, so the shapes are real
 // rather than what the docs imply.
@@ -57,6 +78,10 @@ describe('useOctoPrint', () => {
       json: () => Promise.resolve(url.includes('/api/job') ? PRINTING : TEMPS),
     });
 
+  beforeEach(() => {
+    hasKey.mockReturnValue(true);
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -84,7 +109,7 @@ describe('useOctoPrint', () => {
 
     const [, init] = fetchMock.mock.calls[0];
     if (!init) throw new Error('fetch was called without a request init');
-    expect((init.headers as Record<string, string>)['X-Api-Key']).toBe(CONFIG.octoPrint.apiKey);
+    expect((init.headers as Record<string, string>)['X-Api-Key']).toBe(TEST_KEY);
   });
 
   // Freezing on values that have stopped being true would be worse than
@@ -127,8 +152,21 @@ describe('useOctoPrint', () => {
 
     unmount();
     await act(async () => {
-      vi.advanceTimersByTime(CONFIG.printerCam.videoRetryMs);
+      vi.advanceTimersByTime(60_000);
     });
     expect(fetchMock.mock.calls.length).toBe(afterFirst);
+  });
+
+  // What a CI-built .ipk gets: the template's placeholder, never a real key.
+  it('reports unconfigured and does not poll when no key was built in', async () => {
+    hasKey.mockReturnValue(false);
+    const fetchMock = vi.fn((url: string) => jsonFor(url));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useOctoPrint(true));
+    await act(async () => {});
+
+    expect(result.current.state).toBe('unconfigured');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
