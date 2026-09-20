@@ -1,12 +1,33 @@
 // Every deployment-specific value lives here.
 //
-// The feed is mjpg-streamer inside the OctoPrint container on Leia, exposed
-// LAN-only on host port 8090 (8080 is scrutiny's). The *.home.nakomis.com
-// vhosts demand an mTLS client certificate, which a sideloaded webOS app
-// cannot present, so the app goes direct.
+// The camera is a Logitech C922 on Leia, served by mjpg-streamer inside the
+// OctoPrint container, LAN-only on host port 8090 (8080 is scrutiny's). The
+// *.home.nakomis.com vhosts demand an mTLS client certificate, which a
+// sideloaded webOS app cannot present, so the app goes direct.
 //
-// Leia's IP rather than leia.local: webOS doesn't reliably resolve mDNS names.
+// MJPEG at 1080p is ~28 Mbit/s of full-frame JPEGs, and the TV has to decode
+// every one in software — which it does, jerkily. go2rtc on phi re-encodes the
+// same feed to H.264 (~8 Mbit/s) that the TV decodes in hardware. phi is a
+// workstation and may be asleep, so the MJPEG feed stays as the fallback: it
+// is ugly but it is served by a box that is always on.
+//
+// IPs rather than .local names: webOS doesn't reliably resolve mDNS.
+import { getSettings } from './settings';
+
 const LEIA = 'http://172.29.0.32:8090';
+const GO2RTC_PORT = 1984;
+const GO2RTC_STREAM = 'printer';
+
+/** go2rtc URLs for the currently configured host (Settings tab). */
+export function go2rtcUrls(host: string = getSettings().go2rtcHost) {
+  const base = `http://${host}:${GO2RTC_PORT}`;
+  return {
+    /** Progressive fMP4 — plays in a plain <video> on Chromium 108. */
+    mp4Url: `${base}/api/stream.mp4?src=${GO2RTC_STREAM}`,
+    /** Single frame, for the connection check before we commit to the video. */
+    frameUrl: `${base}/api/frame.jpeg?src=${GO2RTC_STREAM}`,
+  };
+}
 
 export const CONFIG = {
   printerCam: {
@@ -18,6 +39,10 @@ export const CONFIG = {
     snapshotIntervalMs: 1000,
     /** How long to poll snapshots before trying the proper stream again. */
     streamRetryMs: 5 * 60 * 1000,
+    /** How long to wait for H.264 before falling back to MJPEG. */
+    videoTimeoutMs: 8000,
+    /** How long to sit on the MJPEG fallback before retrying H.264. */
+    videoRetryMs: 2 * 60 * 1000,
   },
   /** How long the tab strip stays up after the last keypress. */
   stripHideDelayMs: 4000,

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import { PrinterCam } from './printer-cam/PrinterCam';
+import { SettingsTab } from './settings/Settings';
 
 export interface TabDefinition {
   /** Stable key; also used as the DOM id suffix. */
@@ -16,4 +17,5 @@ export interface TabDefinition {
 // To add a tab: write a component under src/tabs/<name>/ and append it here.
 export const TABS: readonly TabDefinition[] = [
   { id: 'printer-cam', title: 'Printer Cam', Component: PrinterCam },
+  { id: 'settings', title: 'Settings', Component: SettingsTab },
 ];
