@@ -1,10 +1,19 @@
+import { useEffect, useRef } from 'react';
 import { CONFIG } from '../../config';
+import { getSettings } from '../../settings';
+import { seekToLiveEdge } from './liveEdge';
 import { useMjpegFeed } from './useMjpegFeed';
+import { useVideoFeed } from './useVideoFeed';
 
-export function PrinterCam() {
+/**
+ * The MJPEG fallback, in its own component so its hook only runs while it is
+ * on screen — mounted alongside the video it would hold a second connection
+ * to Leia, at roughly three times the bitrate of the stream being watched.
+ */
+function MjpegFeed() {
   const feed = useMjpegFeed(CONFIG.printerCam);
   return (
-    <div className="printer-cam">
+    <>
       {feed.src && (
         <img src={feed.src} alt="3D printer camera" onLoad={feed.onLoad} onError={feed.onError} />
       )}
@@ -13,6 +22,41 @@ export function PrinterCam() {
           <span className="dot" />
           {feed.status}
         </div>
+      )}
+    </>
+  );
+}
+
+export function PrinterCam() {
+  const video = useVideoFeed(CONFIG.printerCam, getSettings().go2rtcHost);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Keep the player near the live edge; see liveEdge.ts for why it drifts.
+  useEffect(() => {
+    if (video.mode !== 'video') return;
+    const timer = setInterval(() => {
+      const element = videoRef.current;
+      if (element) seekToLiveEdge(element, CONFIG.printerCam);
+    }, CONFIG.printerCam.liveEdgeCheckMs);
+    return () => clearInterval(timer);
+  }, [video.mode]);
+
+  return (
+    <div className="printer-cam">
+      {video.mode === 'video' && video.videoSrc ? (
+        <video
+          ref={videoRef}
+          // muted + autoPlay + playsInline is what lets webOS start it unattended.
+          src={video.videoSrc}
+          autoPlay
+          muted
+          playsInline
+          aria-label="3D printer camera"
+          onPlaying={video.onPlaying}
+          onError={video.onError}
+        />
+      ) : (
+        <MjpegFeed />
       )}
     </div>
   );

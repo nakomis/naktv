@@ -93,13 +93,21 @@ body {
   inset: 0;
 }
 
-.printer-cam img {
+.printer-cam img,
+.printer-cam video {
   width: 100%;
   height: 100%;
-  /* Scale the 720p feed up to the whole screen, letterboxed if need be. */
+  /* Scale the feed up to the whole screen, letterboxed if need be. */
   object-fit: contain;
   display: block;
+  /* The TV composites video on its own plane; black keeps the edges clean. */
+  background: #000;
 }
+
+/* The camera was remounted the right way up on 2026-09-20, so neither feed is
+   rotated. If it is ever hung upside down again, rotate the H.264 stream in
+   go2rtc (#rotate=180) and the MJPEG fallback here — webOS composites <video>
+   on its own hardware plane and ignores CSS transforms on it. */
 
 .feed-status {
   position: absolute;
@@ -130,4 +138,65 @@ body {
   50% {
     opacity: 1;
   }
+}
+
+/* ── Settings ───────────────────────────────────────────────────────────── */
+
+.settings {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vh;
+  text-align: center;
+  padding: 0 6vw;
+}
+
+.settings h1 {
+  font-size: 4vh;
+  margin: 0;
+}
+
+.settings .hint {
+  color: var(--muted);
+  font-size: 2.2vh;
+  margin: 0;
+  max-width: 60vw;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.octets {
+  border: 0;
+  margin: 0;
+  display: flex;
+  gap: 1.5vw;
+  font-size: 7vh;
+  font-variant-numeric: tabular-nums;
+}
+
+.octet {
+  min-width: 12vw;
+  padding: 0.2em 0.3em;
+  border-radius: 0.15em;
+  border: 0.05em solid transparent;
+}
+
+.octet.selected {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-fg);
+}
+
+.settings .saved {
+  font-size: 2.4vh;
+  margin: 0;
 }
