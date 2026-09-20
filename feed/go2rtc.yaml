@@ -9,6 +9,13 @@
 # audio producer path below assume an Apple Silicon host. For Linux or a Pi,
 # see the "Moving to another host" section of README.md.
 
+# Debug level, deliberately. go2rtc's default (INF) logs nothing about
+# producers, so an exec that fails or is restarted leaves no trace at all —
+# which is how a dead audio producer went unnoticed for some time. At this
+# volume the log is a few tens of KB a day.
+log:
+  level: debug
+
 api:
   listen: ":1984"
   # webOS gives each app its own origin (file://com.nakomis.naktv-webos), and
