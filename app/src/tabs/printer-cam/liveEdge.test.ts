@@ -25,11 +25,24 @@ describe('seekToLiveEdge', () => {
   });
 
   it('skips forward when the player has fallen behind', () => {
-    const m = media(4, 10);
+    // Derived from config rather than hardcoded, so retuning the thresholds
+    // does not silently turn this into a test of the no-op path.
+    const end = 100;
+    const lagged = end - CONFIG.printerCam.liveEdgeMaxLagMs / 1000 - 1;
+    const m = media(lagged, end);
     expect(seekToLiveEdge(m, CONFIG.printerCam)).toBe(true);
-    // Lands just short of the buffered end, not exactly on it.
-    expect(m.currentTime).toBeCloseTo(10 - CONFIG.printerCam.liveEdgeTargetMs / 1000, 3);
-    expect(m.currentTime).toBeLessThan(10);
+    // Lands short of the buffered end, not on it.
+    expect(m.currentTime).toBeCloseTo(end - CONFIG.printerCam.liveEdgeTargetMs / 1000, 3);
+    expect(m.currentTime).toBeLessThan(end);
+  });
+
+  // The feed arrives over MSE, where a seek lands exactly where we put it with
+  // no browser-managed buffer behind it. Landing near the edge starves the
+  // decoder, which stalls, refills, gets seeked onto the edge again — the
+  // picture hanging a second at a time, indefinitely. Guard the headroom.
+  it('leaves enough buffer after seeking not to starve MSE', () => {
+    expect(CONFIG.printerCam.liveEdgeTargetMs).toBeGreaterThanOrEqual(2000);
+    expect(CONFIG.printerCam.liveEdgeMaxLagMs).toBeGreaterThan(CONFIG.printerCam.liveEdgeTargetMs);
   });
 
   it('never seeks backwards', () => {
