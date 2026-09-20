@@ -1,0 +1,58 @@
+# go2rtc config for the NakTV printer cam feed.
+#
+# Re-encodes Leia's MJPEG printer cam to H.264 so the webOS TV app can decode
+# it in hardware instead of software-decoding 15 full-frame 1080p JPEGs a
+# second, which it does jerkily. `printer_av` additionally muxes in a Spotify
+# audio track. See README.md for why that muxing is not optional.
+#
+# HOST-SPECIFIC: the two ffmpeg paths, the `-hwaccel`/encoder flags and the
+# audio producer path below assume an Apple Silicon host. For Linux or a Pi,
+# see the "Moving to another host" section of README.md.
+
+api:
+  listen: ":1984"
+  # webOS gives each app its own origin (file://com.nakomis.naktv-webos), and
+  # go2rtc rejects WebSocket upgrades from an origin that is not its own host
+  # with a 403. That kills WebRTC signalling from the TV app. The REST API is
+  # unaffected, so it only shows up on the ws:// handshake.
+  origin: "*"
+
+ffmpeg:
+  bin: /opt/homebrew/bin/ffmpeg
+
+streams:
+  # Leia's MJPEG over HTTP carries no timestamps, so ffmpeg's mjpeg demuxer
+  # falls back to its default of 25 fps and stamps a genuine 15 fps source
+  # 40 ms apart. Media time then accrues at 15/25 = 0.6x real time whilst the
+  # TV plays it at 1x, so the player drains its buffer, starves, and rebuffers:
+  # ~22 s smooth, ~15 s frozen, round and round.
+  #
+  # -use_wallclock_as_timestamps stamps each frame as it actually arrives, and
+  # -fps_mode passthrough stops ffmpeg re-imposing a constant rate on the way
+  # out. Never "fix" this by pinning -r instead: the C922 drops its frame rate
+  # in dim light, so a hardcoded rate reintroduces the mismatch the moment the
+  # lighting changes.
+  #
+  # Written out as exec: rather than the #video=h264#hardware shorthand because
+  # the shorthand gives no way to pass input flags. Otherwise this is exactly
+  # the command go2rtc generates, except -g: go2rtc chose 50 for an assumed
+  # 25 fps, which at the true 15 fps is a keyframe every 3.3 s and that long a
+  # wait before the first frame renders. 30 makes it 2 s.
+  printer:
+    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -i http://172.29.0.32:8090/?action=stream -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+
+  # The same video, plus a Spotify audio track, as ONE stream.
+  #
+  # webOS allows an app exactly one media element. A <video> and a separate
+  # <audio> force-pause each other — the OS pauses whichever started first,
+  # and this is a platform rule, not a DRM or Spotify quirk: a plain AAC file
+  # does it just as hard. Muxing both tracks into a single stream means the TV
+  # needs only one element, so the video keeps hardware decode and there is
+  # sound as well.
+  #
+  # The video producer is deliberately identical to `printer` above rather
+  # than referencing it: go2rtc would otherwise share one producer between
+  # both streams, and stopping one would stop the other.
+  printer_av:
+    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -i http://172.29.0.32:8090/?action=stream -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+    - "exec:/Users/nakomis/go2rtc-test/bin/spotify-audio.sh {output}"

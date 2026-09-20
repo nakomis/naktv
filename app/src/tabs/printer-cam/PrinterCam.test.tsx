@@ -20,6 +20,29 @@ describe('PrinterCam', () => {
     expect(video.getAttribute('src')).toContain('stream.mp4');
   });
 
+  it('asks for the stream carrying the muxed Spotify audio track', () => {
+    render(<PrinterCam />);
+    expect(screen.getByLabelText('3D printer camera').getAttribute('src')).toContain(
+      'src=printer_av',
+    );
+  });
+
+  // webOS only autoplays unattended when the element is muted, so it must start
+  // that way — but staying muted would discard the audio track in the stream.
+  it('starts muted so webOS will autoplay it', () => {
+    render(<PrinterCam />);
+    expect((screen.getByLabelText('3D printer camera') as HTMLVideoElement).muted).toBe(true);
+  });
+
+  it('unmutes once frames are flowing, so the Spotify track is audible', () => {
+    render(<PrinterCam />);
+    const video = screen.getByLabelText('3D printer camera') as HTMLVideoElement;
+    act(() => {
+      fireEvent.playing(video);
+    });
+    expect(video.muted).toBe(false);
+  });
+
   it('uses the host saved in settings', () => {
     saveSettings({ go2rtcHost: '10.0.0.9' });
     render(<PrinterCam />);

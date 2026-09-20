@@ -16,7 +16,15 @@ import { getSettings } from './settings';
 
 const LEIA = 'http://172.29.0.32:8090';
 const GO2RTC_PORT = 1984;
-const GO2RTC_STREAM = 'printer';
+
+// `printer_av` is the printer video with a Spotify audio track muxed in, so the
+// TV plays both from a single media element. That is not a convenience: webOS
+// allows an app exactly one media element, and a <video> and a separate <audio>
+// force-pause each other — a platform rule, not a DRM one. See feed/README.md.
+//
+// `printer` (video only) is still served, and is the right source for anything
+// that doesn't want sound.
+const GO2RTC_STREAM = 'printer_av';
 
 /** go2rtc URLs for the currently configured host (Settings tab). */
 export function go2rtcUrls(host: string = getSettings().go2rtcHost) {
