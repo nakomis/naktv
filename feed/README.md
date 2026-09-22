@@ -2,8 +2,8 @@
 
 The printer-cam pipeline that NakTV consumes, plus Spotify audio muxed into it.
 
-Runs on a host with ffmpeg, go2rtc and librespot. Currently phi; not yet
-deployed anywhere permanent.
+Runs on a host with ffmpeg, go2rtc and librespot. Currently phi, which is a
+development laptop and sleeps; NAKTV-9 moves it to Rey, which is always on.
 
 ![The feed pipeline: Leia serves MJPEG to an ffmpeg video producer, librespot and
 the PCM pacer feed an ffmpeg audio producer through a named pipe, and go2rtc muxes
@@ -168,7 +168,12 @@ Three things are host-specific:
 2. **The audio producer path** in the `printer_av` stream.
 3. **The encoder flags.** `-hwaccel videotoolbox` and `h264_videotoolbox` are
    Apple Silicon. Elsewhere:
-   - **Linux/x86 with VAAPI**: `-hwaccel vaapi` + `h264_vaapi`
+   - **Linux/x86 with VAAPI**: `-hwaccel vaapi` + `h264_vaapi`. On pre-Broadwell
+     Intel — Rey's HD 3000 (Sandy Bridge) included — this needs the legacy
+     `i965-va-driver`; the current `intel-media-driver` (iHD) only supports
+     Broadwell and later, so a box that old will report no VAAPI encoder at all
+     until the right driver is installed. Treat it as worth testing, not as a
+     given: Sandy Bridge is the oldest generation i965 supports.
    - **Raspberry Pi 4**: `h264_v4l2m2m` (hardware, 1080p30), needs
      `/dev/video11` if containerised
    - **Raspberry Pi 5**: no H.264 hardware encoder at all — use `libx264` with
