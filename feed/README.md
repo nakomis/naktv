@@ -5,20 +5,9 @@ The printer-cam pipeline that NakTV consumes, plus Spotify audio muxed into it.
 Runs on a host with ffmpeg, go2rtc and librespot. Currently phi; not yet
 deployed anywhere permanent.
 
-```
-Leia (mjpg-streamer, 1080p15 MJPEG)
-        |
-        v
-    ffmpeg -- H.264 -------------.
-                                  >-- go2rtc "printer_av" --> TV: one <video>
-    ffmpeg -- AAC ---------------'                            (video + audio)
-        ^                             [ go2rtc restarts these freely ]
-        | reads
-   /tmp/naktv-spotify.pcm  (named pipe)
-        ^
-        | writes, paced
-    librespot -> pcm-pacer.py         [ long-lived, independent of go2rtc ]
-```
+![The feed pipeline: Leia serves MJPEG to an ffmpeg video producer, librespot and
+the PCM pacer feed an ffmpeg audio producer through a named pipe, and go2rtc muxes
+both into the printer_av stream the TV plays from a single video element](../docs/architecture/feed.svg)
 
 ## Why the audio is muxed into the video
 
