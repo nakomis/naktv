@@ -58,8 +58,9 @@ app/                 The webOS app: Vite + React + TypeScript, plain CSS
   src/webos/         webOS platform glue (screen-saver veto)
   webos/             appinfo.json and launcher icons, copied into dist/
 infra/               CDK: GithubCiStack, the OIDC role CI assumes
+feed/                go2rtc, ffmpeg and librespot: the muxed camera + Spotify stream
 scripts/install-tv.sh  Build, sideload and relaunch on the TV
-docs/                Logo, candidates and architecture diagram
+docs/                Logo, candidates and architecture diagrams
 ```
 
 ## Adding a tab
@@ -155,8 +156,9 @@ more than the patch number.
 
 ## Architecture Diagrams
 
-`docs/architecture/naktv.drawio` is the source for the diagram above.
-The SVG is auto-regenerated on commit by the pre-commit hook in `.githooks/pre-commit`.
+`docs/architecture/naktv.drawio` is the source for the diagram above, and
+`docs/architecture/feed.drawio` for the pipeline diagram in `feed/README.md`.
+The SVGs are auto-regenerated on commit by the pre-commit hook in `.githooks/pre-commit`.
 
 To activate the hook after cloning:
 
