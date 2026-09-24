@@ -281,14 +281,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Fixed width, sized to cthulhu's longest statusLabel ("Checking file") —
-   see apps/server/src/store.ts in the cthulhu repo. Without this, the fields
-   to its right shuffle sideways as the label cycles Lifting → Exposing →
-   Dropping. Ellipsis is a safety net for a label longer than any seen yet
-   (e.g. an unrecognised "Unknown (N)" code), never expected to actually bite. */
+/* Fixed width, sized to the labels cthulhu shows mid-print (see
+   apps/server/src/store.ts in the cthulhu repo): the longest are "Finishing",
+   "Stopping" and "Dropping". Without this, the fields to its right shuffle
+   sideways as the label cycles Lifting → Exposing → Dropping. "Checking file"
+   is longer but only shows for a moment before a print starts, so it is left
+   to the ellipsis rather than widening the gap for the whole print. */
 .print-overlay-value--status {
   display: inline-block;
-  width: 13ch;
+  width: 9ch;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
