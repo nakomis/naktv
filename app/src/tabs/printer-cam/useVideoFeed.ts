@@ -4,6 +4,8 @@ import { go2rtcUrls } from '../../config';
 export type FeedMode = 'video' | 'mjpeg';
 
 export interface VideoFeedConfig {
+  /** go2rtc stream name, e.g. `printer_av` or `resin_av`. */
+  streamName: string;
   videoTimeoutMs: number;
   videoRetryMs: number;
   reconnectDelayMs: number;
@@ -31,19 +33,24 @@ export interface VideoFeedState {
 }
 
 /**
- * Chooses between go2rtc's H.264 stream and Leia's MJPEG.
+ * Chooses between go2rtc's H.264 stream and a camera's MJPEG fallback.
  *
  * H.264 over MSE is tried first: the TV decodes it in hardware, so it is
  * smooth where MJPEG stutters, and MSE is the only transport it will play the
- * muxed Spotify audio track from as well. go2rtc runs on phi, a workstation that sleeps, so a feed
- * that doesn't start playing within `videoTimeoutMs` drops to MJPEG and is
- * retried every `videoRetryMs` — the picture is worse but it is always there.
+ * muxed Spotify audio track from as well. go2rtc runs on phi, a workstation
+ * that sleeps, so a feed that doesn't start playing within `videoTimeoutMs`
+ * drops to MJPEG and is retried every `videoRetryMs` — the picture is worse
+ * but it is always there.
  *
  * `host` is a dependency, so changing it in Settings re-tries H.264 at once.
+ * `config.streamName` picks which go2rtc producer this instance plays —
+ * `printer_av` or `resin_av` — shared plumbing, different camera.
  */
 export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedState {
   const [mode, setMode] = useState<FeedMode>('video');
-  const [mseUrl, setMseUrl] = useState<string | undefined>(go2rtcUrls(host).mseUrl);
+  const [mseUrl, setMseUrl] = useState<string | undefined>(
+    go2rtcUrls(config.streamName, host).mseUrl,
+  );
 
   const timeoutTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -67,7 +74,7 @@ export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedSt
       // effect that owns the connection tears the old one down and reconnects.
       const attempt = retries.current;
       retryTimer.current = setTimeout(() => {
-        setMseUrl(`${go2rtcUrls(host).mseUrl}&_r=${attempt}`);
+        setMseUrl(`${go2rtcUrls(config.streamName, host).mseUrl}&_r=${attempt}`);
       }, config.reconnectDelayMs);
       return;
     }
@@ -77,9 +84,9 @@ export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedSt
     retryTimer.current = setTimeout(() => {
       retries.current = 0;
       setMode('video');
-      setMseUrl(go2rtcUrls(host).mseUrl);
+      setMseUrl(go2rtcUrls(config.streamName, host).mseUrl);
     }, config.videoRetryMs);
-  }, [clearTimers, config.reconnectDelayMs, config.videoRetryMs, host]);
+  }, [clearTimers, config.reconnectDelayMs, config.videoRetryMs, config.streamName, host]);
 
   const onPlaying = useCallback(() => {
     playing.current = true;
@@ -89,14 +96,14 @@ export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedSt
   }, []);
 
   useEffect(() => {
-    // A new host means a new go2rtc: start again from H.264.
+    // A new host or stream means a new go2rtc producer: start again from H.264.
     clearTimers();
     playing.current = false;
     retries.current = 0;
     setMode('video');
-    setMseUrl(go2rtcUrls(host).mseUrl);
+    setMseUrl(go2rtcUrls(config.streamName, host).mseUrl);
     return clearTimers;
-  }, [host, clearTimers]);
+  }, [host, config.streamName, clearTimers]);
 
   useEffect(() => {
     if (mode !== 'video' || !mseUrl) return;

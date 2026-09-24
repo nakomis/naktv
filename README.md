@@ -44,6 +44,11 @@ If you find this useful, please consider buying me a coffee:
 - **Printer Cam** shows OctoPrint's mjpg-streamer feed scaled to fill the
   screen. It reconnects after a dropout, falls back to polling single frames
   if the stream keeps failing, and retries the stream every five minutes.
+- **Elegoo** shows the resin printer (a Mars 5 Ultra) via cthulhu's camera
+  service, with the same reconnect/fallback behaviour, and a status overlay
+  from cthulhu's `/api/status` — job, layer count and progress rather than
+  OctoPrint's temperatures. The overlay hides quietly if cthulhu can't be
+  reached; the video keeps playing regardless.
 - **No screen saver.** The app vetoes webOS's screen saver, which would
   otherwise cover a static-looking feed after a few idle minutes.
 - The **NakTV button** lives in [tv-remote](https://github.com/nakomis/tv-remote)
