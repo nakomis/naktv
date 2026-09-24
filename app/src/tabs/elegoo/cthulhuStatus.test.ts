@@ -39,6 +39,8 @@ describe('toElegooStatus', () => {
     expect(s.percent).toBe('0%');
     // 23,904,171 ms ≈ 398.4 minutes ≈ 06:38.
     expect(s.remaining).toBe('06:38');
+    // 23,997,797 ms ≈ 399.96 minutes ≈ 06:39.
+    expect(s.total).toBe('06:39');
   });
 
   it('reports idle when status is 0, dropping the layer count', () => {
@@ -46,6 +48,11 @@ describe('toElegooStatus', () => {
     expect(s.state).toBe('idle');
     expect(s.layer).toBe('--:--');
     expect(s.filename).toBe('');
+  });
+
+  it('shows UNKNOWN for total when cthulhu has no estimate', () => {
+    const s = toElegooStatus({ print: { ...PRINTING.print, totalMs: null } });
+    expect(s.total).toBe('--:--');
   });
 
   it('survives a payload with no print field', () => {

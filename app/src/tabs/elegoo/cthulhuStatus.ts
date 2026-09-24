@@ -34,6 +34,8 @@ export interface ElegooStatus {
   /** `current / total`, or UNKNOWN when there is no job to count layers of. */
   layer: string;
   percent: string;
+  /** The printer's own estimate of the whole print, from `print.totalMs`. */
+  total: string;
   remaining: string;
 }
 
@@ -48,6 +50,7 @@ export const UNAVAILABLE_STATUS: ElegooStatus = {
   statusLabel: '',
   layer: UNKNOWN,
   percent: NO_PERCENT,
+  total: UNKNOWN,
   remaining: UNKNOWN,
 };
 
@@ -80,6 +83,7 @@ export function toElegooStatus(data: CthulhuStatus): ElegooStatus {
     statusLabel: print.statusLabel ?? '',
     layer: formatLayer(print.currentLayer, print.totalLayer),
     percent: formatPercent(print.progressPercent),
+    total: formatDurationMs(print.totalMs),
     remaining: formatDurationMs(print.remainingMs),
   };
 }

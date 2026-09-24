@@ -3,18 +3,20 @@ import { getSettings } from '../../settings';
 import { CameraFeed } from '../printer-cam/CameraFeed';
 import { ElegooOverlay } from './ElegooOverlay';
 import { useCthulhu } from './useCthulhu';
+import { useNowPlaying } from './useNowPlaying';
 
 export function ElegooCam() {
   const showOverlay = getSettings().showPrintOverlay;
   // Polling is skipped entirely when the overlay is off, so a disabled
   // feature costs nothing on the wire or on phi.
   const status = useCthulhu(showOverlay);
+  const nowPlaying = useNowPlaying(showOverlay);
 
   return (
     <CameraFeed
       config={CONFIG.elegooCam}
       ariaLabel="Elegoo resin printer camera"
-      overlay={showOverlay && <ElegooOverlay status={status} />}
+      overlay={showOverlay && <ElegooOverlay status={status} nowPlaying={nowPlaying} />}
     />
   );
 }

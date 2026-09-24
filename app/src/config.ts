@@ -21,6 +21,11 @@ const LEIA = 'http://172.29.0.32:8090';
 // separate always-on service, not go2rtc itself.
 const CTHULHU_CAMERA = 'http://172.29.0.14:9121';
 const GO2RTC_PORT = 1984;
+/**
+ * Static file server for `now-playing.json`, run alongside librespot by
+ * `feed/bin/spotify-connect.sh` on the same box as go2rtc. Free on phi.
+ */
+const NOW_PLAYING_PORT = 1985;
 
 /**
  * go2rtc URLs for `stream` on the currently configured host (Settings tab).
@@ -46,6 +51,14 @@ export function go2rtcUrls(stream: string, host: string = getSettings().go2rtcHo
     /** Single frame, for the connection check before we commit to the video. */
     frameUrl: `${base}/api/frame.jpeg?src=${stream}`,
   };
+}
+
+/**
+ * URL for phi's `now-playing.json`, on the currently configured go2rtc host
+ * (Settings tab) — it's the same box, not a separately configured one.
+ */
+export function nowPlayingUrl(host: string = getSettings().go2rtcHost): string {
+  return `http://${host}:${NOW_PLAYING_PORT}/now-playing.json`;
 }
 
 /**
@@ -148,6 +161,19 @@ export const CONFIG = {
   cthulhu: {
     baseUrl: 'http://172.29.0.14:9120',
     /** Layer counts and progress move slowly; this is frequent enough to feel live. */
+    pollIntervalMs: 5000,
+    /** Give up on a poll well inside the interval, so they cannot pile up. */
+    timeoutMs: 4000,
+  },
+  /**
+   * Spotify's now-playing feed, written by `feed/bin/now-playing.py` (a
+   * librespot `--onevent` hook) and served statically from phi by a tiny HTTP
+   * server `spotify-connect.sh` starts alongside librespot. The URL follows
+   * `go2rtcHost` (see `nowPlayingUrl` above) rather than living here, since
+   * it's the same box, not a separately configured one.
+   */
+  nowPlaying: {
+    /** The now-playing feed changes on track events; this just catches up. */
     pollIntervalMs: 5000,
     /** Give up on a poll well inside the interval, so they cannot pile up. */
     timeoutMs: 4000,

@@ -7,6 +7,11 @@
   --bg: #000;
   --fg: #f2f2f2;
   --muted: #8a8a8a;
+  /* Lifted above --muted for the print overlay's own scrim, which is held
+     solidly dark behind the label row rather than fading straight away —
+     see .print-overlay below. #8a8a8a reads fine on the black gap between
+     video frames but disappears against a bright, frosted-glass background. */
+  --overlay-label: #c8c8c8;
   --strip-bg: rgba(12, 12, 12, 0.82);
   --tab-active-bg: #f2f2f2;
   --tab-active-fg: #0a0a0a;
@@ -206,10 +211,13 @@ body {
  * Print overlay — a single strip across the top of the camera feed.
  *
  * Read from across a room, so sizes are generous and the layout is one row:
- * the job on the left, temperatures on the right. The scrim is not decoration
- * — white text over a brightly lit print bed is unreadable exactly when the
- * print is most worth looking at, and a gradient keeps the picture visible
- * where the text is not.
+ * the job (or Spotify's now-playing, or both) on the left, temperatures or
+ * now-playing on the right. The scrim is not decoration — text over a bright,
+ * light-walled living room is unreadable exactly when the print is most worth
+ * looking at. It is held effectively solid for the label/value row plus its
+ * padding, then fades out over a short distance below that, rather than
+ * fading from the first pixel — a gentle fade left STATUS/LAYER unreadable
+ * against a frosted-glass background.
  */
 .print-overlay {
   position: absolute;
@@ -222,15 +230,29 @@ body {
   align-items: baseline;
   gap: 3vh;
   padding: 2vh 3vh 3vh;
-  background: linear-gradient(rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
+  background: linear-gradient(
+    rgba(0, 0, 0, 0.88) 0%,
+    rgba(0, 0, 0, 0.88) 70%,
+    rgba(0, 0, 0, 0) 100%
+  );
   pointer-events: none;
 }
 
 .print-overlay-job,
-.print-overlay-temps {
+.print-overlay-temps,
+.print-overlay-now-playing {
   display: flex;
   align-items: baseline;
   gap: 2.5vh;
+}
+
+/* Right-aligned, and never wide enough to shove the print fields — each
+   value truncates with an ellipsis independently, see
+   .print-overlay-value--truncate below. */
+.print-overlay-now-playing {
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 34vw;
 }
 
 .print-overlay-name {
@@ -242,10 +264,11 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: 0.6vh;
+  min-width: 0;
 }
 
 .print-overlay-label {
-  color: var(--muted);
+  color: var(--overlay-label);
   font-size: 1.7vh;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -258,8 +281,32 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* Fixed width, sized to cthulhu's longest statusLabel ("Checking file") —
+   see apps/server/src/store.ts in the cthulhu repo. Without this, the fields
+   to its right shuffle sideways as the label cycles Lifting → Exposing →
+   Dropping. Ellipsis is a safety net for a label longer than any seen yet
+   (e.g. an unrecognised "Unknown (N)" code), never expected to actually bite. */
+.print-overlay-value--status {
+  display: inline-block;
+  width: 13ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Spotify's album/track: CSS-truncated as well as trimmed at the first "("
+   in code, so a title with no parenthesis to trim still can't push the print
+   fields off the left edge of the bar. */
+.print-overlay-value--truncate {
+  display: inline-block;
+  max-width: 14vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .print-overlay-note {
-  color: var(--muted);
+  color: var(--overlay-label);
   font-size: 2vh;
 }
 
