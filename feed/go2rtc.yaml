@@ -83,10 +83,16 @@ streams:
   # rides on that single session: MJPEG from the camera service, re-encoded
   # to H.264 exactly as the CR6-SE's is. When go2rtc becomes the hub (CTHU-18)
   # this can take the printer's own H.264 with no re-encode at all.
+  #
+  # `-f mjpeg`, not the multipart probe: a viewer joining a feed that is
+  # already running starts mid-frame, with no boundary line first, and ffmpeg's
+  # probe gives up ("Invalid data found"). The raw JPEG parser skips to the
+  # next frame instead. It only worked without this while go2rtc was the first
+  # viewer.
   resin:
-    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -i http://127.0.0.1:9121/video -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -f mjpeg -i http://127.0.0.1:9121/video -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
 
   # The same, with the shared Spotify track - what the TV plays.
   resin_av:
-    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -i http://127.0.0.1:9121/video -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -f mjpeg -i http://127.0.0.1:9121/video -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
     - rtsp://127.0.0.1:8554/spotify
