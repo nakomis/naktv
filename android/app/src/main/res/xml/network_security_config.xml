@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The TV is API 28, where a networkSecurityConfig element overrides the
+  usesCleartextTraffic manifest attribute rather than working alongside it —
+  so cleartext has to be granted here too, or the config wins and blocks it.
+  Everything this app talks to (cthulhu, Leia's mjpg-streamer, go2rtc) is a
+  bare LAN IP with no TLS, same as the webOS build.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
