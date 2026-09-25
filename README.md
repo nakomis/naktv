@@ -23,6 +23,7 @@ If you find this useful, please consider buying me a coffee:
 - [Why it's built the way it is](#why-its-built-the-way-it-is)
 - [Setting up the TV](#setting-up-the-tv)
 - [Building and installing](#building-and-installing)
+- [Android TV](#android-tv)
 - [Testing](#testing)
 - [CI and releases](#ci-and-releases)
 - [Architecture Diagrams](#architecture-diagrams)
@@ -62,9 +63,11 @@ app/                 The webOS app: Vite + React + TypeScript, plain CSS
   src/tabs/          One directory per tab, plus registry.ts
   src/webos/         webOS platform glue (screen-saver veto)
   webos/             appinfo.json and launcher icons, copied into dist/
+android/             A thin Kotlin WebView shell hosting the same app on Android TV
 infra/               CDK: GithubCiStack, the OIDC role CI assumes
 feed/                go2rtc, ffmpeg and librespot: the muxed camera + Spotify stream
-scripts/install-tv.sh  Build, sideload and relaunch on the TV
+scripts/install-tv.sh       Build, sideload and relaunch on the LG
+scripts/install-android.sh  Build, sideload and relaunch on Android TV
 docs/                Logo, candidates and architecture diagrams
 ```
 
@@ -136,6 +139,46 @@ Set `TV_DEVICE` to target a device other than `b3`.
 
 To debug on the TV, run `pnpm exec ares-inspect --device b3 --app com.nakomis.naktv`
 and open the URL it prints in Chrome.
+
+## Android TV
+
+The same web app also runs on an Android TV (tested on a Sony BRAVIA
+KD-49XH81), inside a small Kotlin WebView shell in `android/` — see that
+directory and its build for how the two platforms diverge (mainly: Back has to
+be forwarded into the page by hand, and `window.close()` has to be redirected
+to actually finish the Activity).
+
+To enable ADB debugging on the Bravia (or any Android TV):
+
+1. **Settings → Device Preferences → About**, then select **Build** and tap it
+   seven times to unlock Developer options.
+2. Back out to **Device Preferences → Developer options** and turn on
+   **ADB debugging** (also **USB debugging** shows as **Network debugging** or
+   similar on some sets — enable whichever grants a TCP endpoint).
+3. From the Mac:
+
+   ```sh
+   adb connect <tv-ip>:5555   # accept the prompt on the TV the first time
+   ```
+
+Then build, sideload and launch:
+
+```sh
+cd app
+pnpm run install-android                       # device 172.29.0.13:5555
+TV_DEVICE=<ip>:5555 pnpm run install-android    # a different device
+```
+
+This builds the web app exactly as `install-tv` does, copies `app/dist` into
+`android/app/src/main/assets/www/` (git-ignored — always regenerated), runs
+`android/gradlew assembleDebug`, then `adb install -r` and launches it. The
+APK is debug-signed; nothing here is published anywhere, so that's fine for
+sideloading.
+
+The Gradle build wants a JDK the Android Gradle Plugin accepts —
+`android/.tool-versions` pins one via asdf. Point `local.properties`
+(git-ignored, one line: `sdk.dir=...`) at the Android SDK if it isn't at the
+default macOS location.
 
 ## Testing
 

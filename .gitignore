@@ -19,6 +19,16 @@ PLAN.md
 cdk.out/
 *.out/
 
+# Android — Gradle build output and the local SDK path; the wrapper itself
+# (gradlew, gradle/wrapper/*) is committed so builds are reproducible.
+android/.gradle/
+android/local.properties
+android/build/
+android/*/build/
+android/*/.cxx/
+# Copied in by scripts/install-android.sh from app/dist; never hand-edited.
+android/app/src/main/assets/www/
+
 # Coverage
 coverage/
 lcov.info

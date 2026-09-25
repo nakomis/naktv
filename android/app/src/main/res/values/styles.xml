@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      No action bar, black background: the web app fills the whole screen and
+      draws its own tab strip. Immersive full-screen is set programmatically
+      in MainActivity, since the flags needed on API 28 aren't all reachable
+      from a theme alone.
+    -->
+    <style name="Theme.NakTV" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

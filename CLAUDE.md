@@ -30,6 +30,30 @@ SSM (`/naktv/devmode-session-token`, prod), which the keepalive in
 - `ares-launch` re-focuses a running instance rather than loading a new build.
   `scripts/install-tv.sh` closes the app first.
 
+### Android TV
+
+`android/` hosts the same `app/dist` build inside a Kotlin WebView, for the
+Sony Bravia. It is a separate constraint set from webOS, not a relaxation of
+it — the web app itself is unchanged and doesn't know which platform it's on:
+
+- **Back doesn't reach the page for free.** Android's hardware Back key is
+  intercepted in `MainActivity` and turned into a synthetic `keydown` with
+  `keyCode: 27` (Escape) via `evaluateJavascript` — `isBack()` in `keys.ts`
+  already treats that as Back, so nothing there needed to change.
+- **`window.close()` is a no-op on a top-level WebView.** It only does
+  anything for a popup opened with `window.open()`, which this page never
+  does. `MainActivity` overrides it after each load to call a
+  `NakTVAndroid.exit()` JS bridge instead, which finishes the Activity.
+- **`allowUniversalAccessFromFileURLs` does the same job it does on webOS**:
+  letting the `file://` page fetch cthulhu's `/api/status`, which sends no
+  CORS headers.
+- **The network security config has to say cleartext is allowed too.**
+  API 28 (the TV's Android version) lets a `networkSecurityConfig` element
+  override `usesCleartextTraffic` in the manifest rather than working
+  alongside it, so both have to grant it.
+- Gradle wants a JDK the Android Gradle Plugin accepts; `android/.tool-versions`
+  pins one via asdf (Corretto 25/18, the system defaults, are not it).
+
 ## Verifying on the TV
 
 Tests run in jsdom. To check the real thing, install with `pnpm run install-tv`,
@@ -43,8 +67,9 @@ because the page is composited over the video plane.
 
 ```
 app/        Vite + React + TS webOS app (pnpm, Biome, Vitest)
+android/    Kotlin WebView shell hosting app/dist on Android TV (Gradle)
 infra/      CDK GithubCiStack (pnpm, Jest)
-scripts/    install-tv.sh
+scripts/    install-tv.sh, install-android.sh
 docs/       logo, candidates, architecture diagram
 ```
 
