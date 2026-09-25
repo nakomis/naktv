@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { ElegooCam } from './elegoo/ElegooCam';
 import { PrinterCam } from './printer-cam/PrinterCam';
 import { SettingsTab } from './settings/Settings';
 
@@ -17,5 +18,6 @@ export interface TabDefinition {
 // To add a tab: write a component under src/tabs/<name>/ and append it here.
 export const TABS: readonly TabDefinition[] = [
   { id: 'printer-cam', title: 'Printer Cam', Component: PrinterCam },
+  { id: 'elegoo', title: 'Elegoo', Component: ElegooCam },
   { id: 'settings', title: 'Settings', Component: SettingsTab },
 ];

@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface FeedConfig {
   streamUrl: string;
-  snapshotUrl: string;
+  /**
+   * A discrete single-frame endpoint, polled once the multipart stream is
+   * unreliable. Not every source has one (cthulhu's camera service doesn't):
+   * when absent, `streamUrl` itself is re-fetched instead — cruder, but it
+   * still recovers frames from a source that only degrades intermittently.
+   */
+  snapshotUrl?: string;
   reconnectDelayMs: number;
   maxStreamFailures: number;
   snapshotIntervalMs: number;
@@ -58,14 +64,22 @@ export function useMjpegFeed(config: FeedConfig): FeedState {
   const startSnapshots = useCallback(() => {
     stopAll();
     setStatus('Stream unstable — polling frames…');
-    const tick = () => setSrc(cacheBust(config.snapshotUrl));
+    const snapshotUrl = config.snapshotUrl ?? config.streamUrl;
+    const tick = () => setSrc(cacheBust(snapshotUrl));
     tick();
     snapshotTimer.current = setInterval(tick, config.snapshotIntervalMs);
     streamRetryTimer.current = setTimeout(() => {
       failures.current = 0;
       startStream();
     }, config.streamRetryMs);
-  }, [config.snapshotUrl, config.snapshotIntervalMs, config.streamRetryMs, stopAll, startStream]);
+  }, [
+    config.snapshotUrl,
+    config.streamUrl,
+    config.snapshotIntervalMs,
+    config.streamRetryMs,
+    stopAll,
+    startStream,
+  ]);
 
   const onLoad = useCallback(() => {
     failures.current = 0;

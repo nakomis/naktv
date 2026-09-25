@@ -26,8 +26,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${BITRATE:=320}"
 : "${INITIAL_VOLUME:=50}"
 : "${LOG_DIR:=/tmp}"
+# now-playing.py (the --onevent hook) and now-playing-server.py (the static
+# file server the TV polls) — see feed/README.md's "Now playing" section.
+: "${NOW_PLAYING_DIR:=/tmp/naktv-www}"
+: "${NOW_PLAYING_PORT:=1985}"
+: "${NOW_PLAYING_SCRIPT:=$HERE/now-playing.py}"
+: "${NOW_PLAYING_SERVER:=$HERE/now-playing-server.py}"
+export NOW_PLAYING_DIR NOW_PLAYING_PORT
 
 LIBRESPOT_LOG="$LOG_DIR/naktv-librespot.log"
+NOW_PLAYING_LOG="$LOG_DIR/naktv-now-playing.log"
 
 # Only one instance may claim the device name, or Spotify shows two identical
 # entries and picking the wrong one does nothing.
@@ -40,7 +48,16 @@ sleep 1
 echo "Spotify Connect device : $DEVICE_NAME"
 echo "PCM pipe               : $FIFO"
 echo "librespot log          : $LIBRESPOT_LOG"
+echo "now-playing feed       : http://0.0.0.0:$NOW_PLAYING_PORT/now-playing.json"
+echo "now-playing log        : $NOW_PLAYING_LOG"
 echo "Ctrl-C to stop."
+
+# The static file server for now-playing.json. Independent of the librespot
+# pipeline below — it must keep serving the last-known track even whilst
+# librespot is mid-restart — so it's started once here and torn down only on
+# the script's own exit, not on every pipeline restart.
+"$PYTHON_BIN" "$NOW_PLAYING_SERVER" >>"$NOW_PLAYING_LOG" 2>&1 &
+NOW_PLAYING_PID=$!
 
 # Supervised, because librespot is not reliable enough to run unattended.
 # Observed: it logged "Connection to server closed." and then sat there for
@@ -62,12 +79,16 @@ while true; do
       --backend pipe \
       --bitrate "$BITRATE" \
       --initial-volume "$INITIAL_VOLUME" \
+      --onevent "$NOW_PLAYING_SCRIPT" \
       2>>"$LIBRESPOT_LOG" \
     | "$PYTHON_BIN" "$PACER" --output "$FIFO" &
 
   PGID=$!
+  # Also kills the now-playing server: this is the trap that actually fires,
+  # since each iteration's EXIT trap replaces the last, and the loop only
+  # exits via `break` below, straight into the script's own exit.
   # shellcheck disable=SC2064
-  trap "kill -- -$PGID 2>/dev/null" EXIT
+  trap "kill -- -$PGID 2>/dev/null; kill '$NOW_PLAYING_PID' 2>/dev/null" EXIT
   wait "$PGID"
   rc=$?
 

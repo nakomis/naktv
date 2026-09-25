@@ -60,6 +60,8 @@ is sound as well.
 | `bin/spotify-connect.sh` | **Long-lived**: librespot → pacer → named pipe. Started by hand, outlives go2rtc |
 | `bin/spotify-audio.sh` | go2rtc audio producer: named pipe → AAC → RTSP. Restartable at will |
 | `bin/pcm-pacer.py` | Paces to real time, pads silence when idle, and owns the pipe |
+| `bin/now-playing.py` | librespot `--onevent` hook: writes `now-playing.json` (see "Now playing" below) |
+| `bin/now-playing-server.py` | Serves `now-playing.json` over HTTP for the TV to poll |
 
 ### Why librespot is not a go2rtc producer
 
@@ -133,6 +135,38 @@ Splitting librespot out of the producer makes this far rarer, since only a
 deliberate restart of the Connect endpoint can trigger it, but the guard stays:
 the failure is invisible from Spotify's side and maddening to diagnose.
 
+## Now playing
+
+The Elegoo overlay in the app shows what Spotify is currently playing,
+right-aligned in the same bar as the print status (NAKTV-13). It works
+entirely alongside the audio pipeline above, not through it:
+
+- `bin/now-playing.py` is passed to librespot as `--onevent`. librespot runs
+  it once per player event, on its own thread, and blocks on it — so it must
+  return almost instantly and never fail loudly (it always exits 0). On
+  `track_changed` it records the track, album and artists; on `playing`,
+  `paused`, `stopped` and `session_disconnected` it updates only the playing
+  flag, preserving whatever track fields it already knows, because those
+  events carry a track ID but not a name. It writes
+  `$NOW_PLAYING_DIR/now-playing.json` (default `/tmp/naktv-www`) atomically —
+  temp file plus rename — so a poller never sees a half-written file.
+- `bin/now-playing-server.py` serves that directory over plain HTTP on port
+  **1985** (chosen because it's free on phi alongside go2rtc's 1984), adding
+  `Access-Control-Allow-Origin: *` and `Cache-Control: no-store`. It is
+  started by `spotify-connect.sh` as a background child, once, independently
+  of the librespot pipeline's own restart loop — so a flaky Spotify session
+  never interrupts the last-known "now playing" the TV is showing.
+- The app polls `http://<go2rtc host>:1985/now-playing.json` every 5 seconds
+  (`useNowPlaying`, mirroring `useCthulhu`) and shows nothing when the feed is
+  unreachable, stale, or reports nothing playing.
+
+Both scripts are plain `python3` stdlib, no dependencies, and both take their
+directory and port from `NOW_PLAYING_DIR` / `NOW_PLAYING_PORT`, overridable
+the same way as everything else in `bin/`.
+
+Restarting `spotify-connect.sh` to pick up a change here must be done from a
+**GUI terminal on phi**, never over ssh — see "Operating it" below for why.
+
 ## Operating it
 
 go2rtc is started by hand and has no launchd job. Apply config changes with:
@@ -181,7 +215,8 @@ Three things are host-specific:
 
 `bin/` takes its paths from the environment, so only `go2rtc.yaml` needs
 editing: `LIBRESPOT_BIN`, `FFMPEG_BIN`, `PYTHON_BIN`, `PACER`, `DEVICE_NAME`,
-`BITRATE`, `INITIAL_VOLUME`, `AUDIO_BITRATE`, `LOG_DIR`.
+`BITRATE`, `INITIAL_VOLUME`, `AUDIO_BITRATE`, `LOG_DIR`, `NOW_PLAYING_DIR`,
+`NOW_PLAYING_PORT`.
 
 Note that Spotify Connect discovery is mDNS, which does not traverse Docker's
 bridge network — a container would need `network_mode: host`, and therefore a

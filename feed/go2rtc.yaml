@@ -60,6 +60,39 @@ streams:
   # The video producer is deliberately identical to `printer` above rather
   # than referencing it: go2rtc would otherwise share one producer between
   # both streams, and stopping one would stop the other.
+  #
+  # The audio, unlike the video, IS shared: it comes from the `spotify` stream
+  # below over go2rtc's own RTSP server. The PCM pipe it reads can have only
+  # one reader - two audio producers would each get part of the music, or one
+  # none - and there are now two camera streams (`printer_av` and `resin_av`)
+  # that want it. Switching tabs switches the TV between them without either
+  # ever owning the pipe.
   printer_av:
     - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -i http://172.29.0.32:8090/?action=stream -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+    - rtsp://127.0.0.1:8554/spotify
+
+  # The Spotify audio, on its own: the ONLY reader of the PCM pipe, which the
+  # camera streams above and below take their sound from.
+  spotify:
     - "exec:/Users/nakomis/go2rtc-test/bin/spotify-audio.sh {output}"
+
+  # The Elegoo Mars 5 Ultra (NAKTV-13), from cthulhu's camera service on this
+  # same host rather than from the printer. The printer allows two RTSP
+  # sessions; cthulhu's camera service already holds one for everything it
+  # does, and taking the other here would lock out the Elegoo app. So the TV
+  # rides on that single session: MJPEG from the camera service, re-encoded
+  # to H.264 exactly as the CR6-SE's is. When go2rtc becomes the hub (CTHU-18)
+  # this can take the printer's own H.264 with no re-encode at all.
+  #
+  # `-f mjpeg`, not the multipart probe: a viewer joining a feed that is
+  # already running starts mid-frame, with no boundary line first, and ffmpeg's
+  # probe gives up ("Invalid data found"). The raw JPEG parser skips to the
+  # next frame instead. It only worked without this while go2rtc was the first
+  # viewer.
+  resin:
+    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -f mjpeg -i http://127.0.0.1:9121/video -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+
+  # The same, with the shared Spotify track - what the TV plays.
+  resin_av:
+    - "exec:/opt/homebrew/bin/ffmpeg -hide_banner -v error -hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld -fflags nobuffer -flags low_delay -use_wallclock_as_timestamps 1 -f mjpeg -i http://127.0.0.1:9121/video -c:v h264_videotoolbox -g 30 -bf 0 -profile:v high -level:v 4.1 -an -fps_mode passthrough -user_agent ffmpeg/go2rtc -rtsp_transport tcp -f rtsp {output}"
+    - rtsp://127.0.0.1:8554/spotify
