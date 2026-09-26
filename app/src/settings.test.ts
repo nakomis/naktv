@@ -9,8 +9,8 @@ import {
 describe('settings', () => {
   beforeEach(resetSettingsForTests);
 
-  it('defaults to phi', () => {
-    expect(getSettings().go2rtcHost).toBe('172.29.0.14');
+  it('defaults to the feed host', () => {
+    expect(getSettings().go2rtcHost).toBe(DEFAULT_SETTINGS.go2rtcHost);
   });
 
   it('accepts dotted quads only', () => {
@@ -45,6 +45,7 @@ describe('settings', () => {
 
   it('exposes the default separately from the current value', () => {
     saveSettings({ go2rtcHost: '10.1.2.3' });
-    expect(DEFAULT_SETTINGS.go2rtcHost).toBe('172.29.0.14');
+    expect(getSettings().go2rtcHost).toBe('10.1.2.3');
+    expect(DEFAULT_SETTINGS.go2rtcHost).not.toBe('10.1.2.3');
   });
 });

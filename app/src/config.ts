@@ -16,10 +16,13 @@ import secrets from './secrets.json';
 import { getSettings } from './settings';
 
 const LEIA = 'http://172.29.0.32:8090';
-// cthulhu's camera service on phi — the Elegoo Mars 5 Ultra's MJPEG fallback.
-// Fixed like LEIA above rather than following the go2rtcHost setting: it's a
-// separate always-on service, not go2rtc itself.
-const CTHULHU_CAMERA = 'http://172.29.0.14:9121';
+// cthulhu's camera service — the Elegoo Mars 5 Ultra's MJPEG fallback.
+// On Rey since the CTHU-18 cutover, so it now happens to share a host with
+// go2rtc. Still pinned rather than following the go2rtcHost setting, because
+// it is a separate service that could move again; CTHU-18 records the case
+// for making both cthulhu addresses follow the setting, as nowPlayingUrl
+// already does.
+const CTHULHU_CAMERA = 'http://172.29.0.36:9121';
 const GO2RTC_PORT = 1984;
 /**
  * Static file server for `now-playing.json`, run alongside librespot by
@@ -153,13 +156,13 @@ export const CONFIG = {
    * carries no client certificate requirement either. No API key: cthulhu is
    * LAN-only with nothing to authenticate.
    *
-   * IMPORTANT: cthulhu does not send CORS headers yet (fixed separately, to be
-   * deployed once the current print finishes), so until then every fetch from
-   * the TV's file:// origin fails and useCthulhu reports 'unavailable'. The
-   * overlay already treats that as "hide quietly", not as an error.
+   * cthulhu answers `access-control-allow-origin: *` as of the CTHU-18 rebuild
+   * on Rey, so fetches from the TV's file:// origin now succeed. Before that
+   * it sent no CORS headers and useCthulhu reported 'unavailable' — which the
+   * overlay treats as "hide quietly", so the tab degraded rather than erroring.
    */
   cthulhu: {
-    baseUrl: 'http://172.29.0.14:9120',
+    baseUrl: 'http://172.29.0.36:9120',
     /** Layer counts and progress move slowly; this is frequent enough to feel live. */
     pollIntervalMs: 5000,
     /** Give up on a poll well inside the interval, so they cannot pile up. */
