@@ -2,8 +2,29 @@
 
 The printer-cam pipeline that NakTV consumes, plus Spotify audio muxed into it.
 
-Runs on a host with ffmpeg, go2rtc and librespot. Currently phi, which is a
-development laptop and sleeps; NAKTV-9 moves it to Rey, which is always on.
+Runs on **Rey** as two systemd units, installed by
+`home-infra/rey/ansible/playbook.yml` (`--tags naktv-feed`) from artefacts in
+Nexus. It used to run on phi by hand, which is a development laptop and sleeps
+— on 2026-09-20 that took the feed down mid-session (NAKTV-9).
+
+`scripts/publish-feed.sh` publishes what the playbook installs: pinned go2rtc
+and librespot binaries, and a versioned tarball of this directory. The Nexus
+repo is `ALLOW_ONCE`, so a version is immutable — re-publishing means bumping
+it.
+
+### Rey's encoder flags differ from phi's
+
+`-pix_fmt yuv420p` is required and was not on phi. The camera emits
+`yuvj422p`, and libx264's `high` profile is 4:2:0 only, so it refuses with
+`high profile doesn't support 4:2:2` and the video producer never starts —
+leaving a stream that carries audio and no picture. `h264_videotoolbox`
+converted internally and hid this.
+
+VAAPI was measured and rejected. The HD 3000 advertises H.264 encode through
+the legacy `i965` driver and it works, but it saves 4%: Sandy Bridge has no
+JPEG decode entrypoint, so decode stays on the CPU, and the `nv12` conversion
+plus `hwupload` consumes the difference. Sustained cost either way is ~1.6
+cores, with no thermal throttling over ten minutes.
 
 ![The feed pipeline: Leia serves MJPEG to an ffmpeg video producer, librespot and
 the PCM pacer feed an ffmpeg audio producer through a named pipe, and go2rtc muxes
