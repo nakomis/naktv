@@ -14,7 +14,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  go2rtcHost: '172.29.0.14',
+  go2rtcHost: '172.29.0.36',
   showPrintOverlay: true,
 };
 

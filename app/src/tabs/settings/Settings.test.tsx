@@ -3,6 +3,17 @@ import { Keys } from '../../keys';
 import { DEFAULT_SETTINGS, getSettings, resetSettingsForTests } from '../../settings';
 import { SettingsTab } from './Settings';
 
+/**
+ * The expected address after nudging one octet. Derived from the default
+ * rather than written out, so moving the feed host does not mean editing
+ * every assertion here — these tests are about the key handling, not the IP.
+ */
+function octet(delta: number, index = 3): string {
+  const parts = DEFAULT_SETTINGS.go2rtcHost.split('.').map(Number);
+  parts[index] += delta;
+  return parts.join('.');
+}
+
 function press(keyCode: number) {
   fireEvent.keyDown(document, { keyCode });
 }
@@ -54,17 +65,17 @@ describe('SettingsTab', () => {
 
     editHost();
     press(Keys.Up);
-    expect(screen.getByRole('status')).toHaveTextContent('172.29.0.15');
+    expect(screen.getByRole('status')).toHaveTextContent(octet(1));
   });
 
   it('changes the selected octet with up and down whilst editing', () => {
     render(<SettingsTab />);
     editHost();
     press(Keys.Up);
-    expect(screen.getByRole('status')).toHaveTextContent('172.29.0.15');
+    expect(screen.getByRole('status')).toHaveTextContent(octet(1));
     press(Keys.Down);
     press(Keys.Down);
-    expect(screen.getByRole('status')).toHaveTextContent('172.29.0.13');
+    expect(screen.getByRole('status')).toHaveTextContent(octet(-1));
   });
 
   it('moves between octets with left and right whilst editing', () => {
@@ -72,14 +83,18 @@ describe('SettingsTab', () => {
     editHost();
     press(Keys.Left);
     press(Keys.Up);
-    expect(screen.getByRole('status')).toHaveTextContent('172.29.1.14');
+    expect(screen.getByRole('status')).toHaveTextContent(octet(1, 2));
   });
 
   it('clamps octets to 0-255', () => {
     render(<SettingsTab />);
     editHost();
-    for (let i = 0; i < 20; i += 1) press(Keys.Down);
-    expect(screen.getByRole('status')).toHaveTextContent('172.29.0.0');
+    // Enough presses to reach zero from any default, with margin — the point
+    // is that it stops at 0 rather than going negative.
+    const start = Number(DEFAULT_SETTINGS.go2rtcHost.split('.')[3]);
+    for (let i = 0; i < start + 5; i += 1) press(Keys.Down);
+    const zeroed = [...DEFAULT_SETTINGS.go2rtcHost.split('.').slice(0, 3), '0'].join('.');
+    expect(screen.getByRole('status')).toHaveTextContent(zeroed);
   });
 
   it('commits on the second OK and persists the host', () => {
@@ -87,8 +102,8 @@ describe('SettingsTab', () => {
     editHost();
     press(Keys.Up);
     press(Keys.Enter);
-    expect(screen.getByRole('status')).toHaveTextContent('Saved — streaming from 172.29.0.15');
-    expect(getSettings().go2rtcHost).toBe('172.29.0.15');
+    expect(screen.getByRole('status')).toHaveTextContent(`Saved — streaming from ${octet(1)}`);
+    expect(getSettings().go2rtcHost).toBe(octet(1));
   });
 
   it('does not save whilst still editing', () => {
