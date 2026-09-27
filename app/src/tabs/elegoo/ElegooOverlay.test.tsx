@@ -43,21 +43,21 @@ describe('ElegooOverlay', () => {
 
   it('shows nothing Spotify-related when nowPlaying is not given', () => {
     render(<ElegooOverlay status={base} />);
-    expect(screen.queryByText('Album')).not.toBeInTheDocument();
+    expect(screen.queryByText('Artist')).not.toBeInTheDocument();
     expect(screen.queryByText('Track')).not.toBeInTheDocument();
   });
 
-  it('shows the album and track when Spotify is playing', () => {
-    render(<ElegooOverlay status={base} nowPlaying={{ album: 'Inception', track: 'Time' }} />);
-    expect(screen.getByText('Album')).toBeInTheDocument();
-    expect(screen.getByText('Inception')).toBeInTheDocument();
+  it('shows the artist and track when Spotify is playing', () => {
+    render(<ElegooOverlay status={base} nowPlaying={{ artist: 'Hans Zimmer', track: 'Time' }} />);
+    expect(screen.getByText('Artist')).toBeInTheDocument();
+    expect(screen.getByText('Hans Zimmer')).toBeInTheDocument();
     expect(screen.getByText('Track')).toBeInTheDocument();
     expect(screen.getByText('Time')).toBeInTheDocument();
   });
 
   it('shows only the field Spotify actually reported', () => {
-    render(<ElegooOverlay status={base} nowPlaying={{ album: '', track: 'Time' }} />);
-    expect(screen.queryByText('Album')).not.toBeInTheDocument();
+    render(<ElegooOverlay status={base} nowPlaying={{ artist: '', track: 'Time' }} />);
+    expect(screen.queryByText('Artist')).not.toBeInTheDocument();
     expect(screen.getByText('Track')).toBeInTheDocument();
   });
 
@@ -65,7 +65,7 @@ describe('ElegooOverlay', () => {
     render(
       <ElegooOverlay
         status={{ ...base, state: 'unavailable' }}
-        nowPlaying={{ album: 'Inception', track: 'Time' }}
+        nowPlaying={{ artist: 'Hans Zimmer', track: 'Time' }}
       />,
     );
     expect(screen.getByText('Status unavailable')).toBeInTheDocument();

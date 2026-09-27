@@ -2,8 +2,9 @@
 
 The printer-cam pipeline that NakTV consumes, plus Spotify audio muxed into it.
 
-Runs on a host with ffmpeg, go2rtc and librespot. Currently phi, which is a
-development laptop and sleeps; NAKTV-9 moves it to Rey, which is always on.
+Runs on a host with ffmpeg, go2rtc and librespot. That host is Rey, which is
+always on, as naktv-feed-go2rtc.service and naktv-feed-connect.service out of
+/opt/naktv-feed. It used to be phi, a development laptop that sleeps.
 
 ![The feed pipeline: Leia serves MJPEG to an ffmpeg video producer, librespot and
 the PCM pacer feed an ffmpeg audio producer through a named pipe, and go2rtc muxes
