@@ -4,7 +4,7 @@ import type { NowPlayingDisplay } from './nowPlaying';
 import { toNowPlayingDisplay } from './nowPlaying';
 
 /**
- * Polls phi's `now-playing.json` (written by `feed/bin/now-playing.py`, a
+ * Polls Rey's `now-playing.json` (written by `feed/bin/now-playing.py`, a
  * librespot `--onevent` hook) for what Spotify is currently playing.
  *
  * Same shape as useCthulhu: each poll carries its own timeout, an `inFlight`

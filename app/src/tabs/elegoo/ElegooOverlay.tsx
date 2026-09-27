@@ -49,13 +49,13 @@ export function ElegooOverlay({
 
 function NowPlayingFields({ nowPlaying }: { nowPlaying: NowPlayingDisplay | null }) {
   if (!nowPlaying) return null;
-  const { album, track } = nowPlaying;
-  if (!album && !track) return null;
+  const { artist, track } = nowPlaying;
+  if (!artist && !track) return null;
 
   return (
     <div className="print-overlay-now-playing">
-      {album && (
-        <Field label="Album" value={album} valueClassName="print-overlay-value--truncate" />
+      {artist && (
+        <Field label="Artist" value={artist} valueClassName="print-overlay-value--truncate" />
       )}
       {track && (
         <Field label="Track" value={track} valueClassName="print-overlay-value--truncate" />

@@ -17,7 +17,7 @@ describe('trimParenthetical', () => {
 });
 
 describe('toNowPlayingDisplay', () => {
-  it('formats a track and album when something is playing', () => {
+  it('formats a track and artist when something is playing', () => {
     const display = toNowPlayingDisplay({
       track: 'Time',
       album: 'Inception (Music from the Motion Picture)',
@@ -25,11 +25,42 @@ describe('toNowPlayingDisplay', () => {
       playing: true,
       updatedAt: '2026-09-24T12:00:00Z',
     });
-    expect(display).toEqual({ track: 'Time', album: 'Inception' });
+    expect(display).toEqual({ track: 'Time', artist: 'Hans Zimmer' });
+  });
+
+  it('bills every credited artist, not just the first', () => {
+    const display = toNowPlayingDisplay({
+      track: 'Under Pressure',
+      artists: ['Queen', 'David Bowie'],
+      playing: true,
+    });
+    expect(display).toEqual({ track: 'Under Pressure', artist: 'Queen, David Bowie' });
+  });
+
+  it('leaves a bracket in an artist name alone', () => {
+    // trimParenthetical is for "(Remastered 2011)" on a title. A bracket in an
+    // artist name is part of the name, so the artist must not go through it.
+    const display = toNowPlayingDisplay({
+      track: 'Teen Age Riot',
+      artists: ['Sonic Youth (Live)'],
+      playing: true,
+    });
+    expect(display?.artist).toBe('Sonic Youth (Live)');
+  });
+
+  it('drops blank and whitespace-only artist entries', () => {
+    const display = toNowPlayingDisplay({
+      track: 'Time',
+      artists: ['Hans Zimmer', '  ', ''],
+      playing: true,
+    });
+    expect(display?.artist).toBe('Hans Zimmer');
   });
 
   it('shows nothing when paused', () => {
-    expect(toNowPlayingDisplay({ track: 'Time', album: 'Inception', playing: false })).toBeNull();
+    expect(
+      toNowPlayingDisplay({ track: 'Time', artists: ['Hans Zimmer'], playing: false }),
+    ).toBeNull();
   });
 
   it('shows nothing when there is no payload', () => {
@@ -38,17 +69,23 @@ describe('toNowPlayingDisplay', () => {
   });
 
   it('shows nothing when playing is true but both fields are empty', () => {
-    expect(toNowPlayingDisplay({ track: '', album: '', playing: true })).toBeNull();
+    expect(toNowPlayingDisplay({ track: '', artists: [], playing: true })).toBeNull();
   });
 
-  it('copes with a track and no album, or an album and no track', () => {
+  it('shows nothing when the album is the only thing on offer', () => {
+    // The album is no longer rendered, so a payload carrying only an album has
+    // nothing the overlay can show.
+    expect(toNowPlayingDisplay({ album: 'Inception', playing: true })).toBeNull();
+  });
+
+  it('copes with a track and no artist, or an artist and no track', () => {
     expect(toNowPlayingDisplay({ track: 'Time', playing: true })).toEqual({
       track: 'Time',
-      album: '',
+      artist: '',
     });
-    expect(toNowPlayingDisplay({ album: 'Inception', playing: true })).toEqual({
+    expect(toNowPlayingDisplay({ artists: ['Hans Zimmer'], playing: true })).toEqual({
       track: '',
-      album: 'Inception',
+      artist: 'Hans Zimmer',
     });
   });
 });
