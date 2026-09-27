@@ -2,7 +2,8 @@
 
 The printer-cam pipeline that NakTV consumes, plus Spotify audio muxed into it.
 
-Runs on **Rey** as two systemd units, installed by
+Runs on **Rey** as two systemd units — `naktv-feed-go2rtc.service` and
+`naktv-feed-connect.service`, out of `/opt/naktv-feed` — installed by
 `home-infra/rey/ansible/playbook.yml` (`--tags naktv-feed`) from artefacts in
 Nexus. It used to run on phi by hand, which is a development laptop and sleeps
 — on 2026-09-20 that took the feed down mid-session (NAKTV-9).

@@ -25,7 +25,7 @@ describe('useNowPlaying', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const { result } = renderHook(() => useNowPlaying(true));
-    await waitFor(() => expect(result.current).toEqual({ track: 'Time', album: 'Inception' }));
+    await waitFor(() => expect(result.current).toEqual({ track: 'Time', artist: 'Hans Zimmer' }));
 
     const asked = fetchMock.mock.calls.map(([u]) => String(u));
     expect(asked.every((u) => u.endsWith('/now-playing.json'))).toBe(true);
