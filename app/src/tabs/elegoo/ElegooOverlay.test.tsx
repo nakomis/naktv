@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { layerImageUrl } from '../../config';
 import type { ElegooStatus } from './cthulhuStatus';
 import { ElegooOverlay } from './ElegooOverlay';
 
@@ -10,6 +11,7 @@ const base: ElegooStatus = {
   percent: '0%',
   total: '06:39',
   remaining: '06:38',
+  currentLayer: 2,
 };
 
 describe('ElegooOverlay', () => {
@@ -70,5 +72,25 @@ describe('ElegooOverlay', () => {
     );
     expect(screen.getByText('Status unavailable')).toBeInTheDocument();
     expect(screen.getByText('Time')).toBeInTheDocument();
+  });
+
+  it('shows the layer being printed', () => {
+    const { container } = render(<ElegooOverlay status={base} />);
+    const img = container.querySelector('img.elegoo-layer');
+    expect(img?.getAttribute('src')).toBe(layerImageUrl(2));
+  });
+
+  it('shows no layer image when idle', () => {
+    const { container } = render(
+      <ElegooOverlay status={{ ...base, state: 'idle', currentLayer: null }} />,
+    );
+    expect(container.querySelector('img.elegoo-layer')).toBeNull();
+  });
+
+  it('shows no layer image when cthulhu is unavailable', () => {
+    const { container } = render(
+      <ElegooOverlay status={{ ...base, state: 'unavailable', currentLayer: null }} />,
+    );
+    expect(container.querySelector('img.elegoo-layer')).toBeNull();
   });
 });

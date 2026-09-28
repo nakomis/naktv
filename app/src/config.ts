@@ -185,6 +185,15 @@ export const CONFIG = {
   stripHideDelayMs: 4000,
 } as const;
 
+/**
+ * cthulhu's PNG of layer `layer` of the current print, as the printer's LCD
+ * shows it (NAKTV-15). 202 while cthulhu is still fetching the print file
+ * from the printer, 404 with nothing printing - both just fail an <img>.
+ */
+export function layerImageUrl(layer: number): string {
+  return `${CONFIG.cthulhu.baseUrl}/api/print/layer?layer=${layer}`;
+}
+
 /** The placeholder `secrets.json.template` ships with. */
 export function hasOctoPrintKey(): boolean {
   const key = CONFIG.octoPrint.apiKey;

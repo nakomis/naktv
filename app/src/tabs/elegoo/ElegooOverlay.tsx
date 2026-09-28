@@ -1,4 +1,5 @@
 import type { ElegooStatus } from './cthulhuStatus';
+import { LayerImage } from './LayerImage';
 import type { NowPlayingDisplay } from './nowPlaying';
 
 /**
@@ -23,27 +24,32 @@ export function ElegooOverlay({
   nowPlaying?: NowPlayingDisplay | null;
 }) {
   return (
-    <div className="print-overlay" role="status">
-      {status.state === 'unavailable' ? (
-        <span className="print-overlay-note">Status unavailable</span>
-      ) : (
-        <div className="print-overlay-job">
-          <span className="print-overlay-name">{status.filename}</span>
-          {/* Fixed width: as status cycles Lifting → Exposing → Dropping, the
-              fields to its right must not jump sideways with it. */}
-          <Field
-            label="Status"
-            value={status.statusLabel}
-            valueClassName="print-overlay-value--status"
-          />
-          <Field label="Layer" value={status.layer} />
-          <Field label="Progress" value={status.percent} />
-          <Field label="Total" value={status.total} />
-          <Field label="Remaining" value={status.remaining} />
-        </div>
+    <>
+      <div className="print-overlay" role="status">
+        {status.state === 'unavailable' ? (
+          <span className="print-overlay-note">Status unavailable</span>
+        ) : (
+          <div className="print-overlay-job">
+            <span className="print-overlay-name">{status.filename}</span>
+            {/* Fixed width: as status cycles Lifting → Exposing → Dropping, the
+                fields to its right must not jump sideways with it. */}
+            <Field
+              label="Status"
+              value={status.statusLabel}
+              valueClassName="print-overlay-value--status"
+            />
+            <Field label="Layer" value={status.layer} />
+            <Field label="Progress" value={status.percent} />
+            <Field label="Total" value={status.total} />
+            <Field label="Remaining" value={status.remaining} />
+          </div>
+        )}
+        <NowPlayingFields nowPlaying={nowPlaying} />
+      </div>
+      {status.state === 'printing' && status.currentLayer !== null && (
+        <LayerImage layer={status.currentLayer} />
       )}
-      <NowPlayingFields nowPlaying={nowPlaying} />
-    </div>
+    </>
   );
 }
 

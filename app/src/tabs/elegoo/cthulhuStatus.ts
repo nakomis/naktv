@@ -37,6 +37,8 @@ export interface ElegooStatus {
   /** The printer's own estimate of the whole print, from `print.totalMs`. */
   total: string;
   remaining: string;
+  /** The raw layer number while printing, for the layer image; else null. */
+  currentLayer: number | null;
 }
 
 /** cthulhu's own idle code — see cthulhu's SDCP status parser. */
@@ -52,6 +54,7 @@ export const UNAVAILABLE_STATUS: ElegooStatus = {
   percent: NO_PERCENT,
   total: UNKNOWN,
   remaining: UNKNOWN,
+  currentLayer: null,
 };
 
 /** Layer count as `current / total`, or UNKNOWN when there is no job. */
@@ -77,13 +80,15 @@ export function toElegooStatus(data: CthulhuStatus): ElegooStatus {
   const print = data.print;
   if (!print || print.status === undefined) return UNAVAILABLE_STATUS;
 
+  const printing = print.status !== IDLE_STATUS;
   return {
-    state: print.status === IDLE_STATUS ? 'idle' : 'printing',
+    state: printing ? 'printing' : 'idle',
     filename: print.filename ?? '',
     statusLabel: print.statusLabel ?? '',
     layer: formatLayer(print.currentLayer, print.totalLayer),
     percent: formatPercent(print.progressPercent),
     total: formatDurationMs(print.totalMs),
     remaining: formatDurationMs(print.remainingMs),
+    currentLayer: printing ? (print.currentLayer ?? null) : null,
   };
 }

@@ -43,6 +43,16 @@ describe('toElegooStatus', () => {
     expect(s.total).toBe('06:39');
   });
 
+  it('keeps the raw layer number while printing, for the layer image', () => {
+    expect(toElegooStatus(PRINTING).currentLayer).toBe(2);
+  });
+
+  it('has no layer number when idle or unavailable', () => {
+    expect(toElegooStatus(IDLE).currentLayer).toBeNull();
+    expect(UNAVAILABLE_STATUS.currentLayer).toBeNull();
+    expect(toElegooStatus({ print: { status: 3 } }).currentLayer).toBeNull();
+  });
+
   it('reports idle when status is 0, dropping the layer count', () => {
     const s = toElegooStatus(IDLE);
     expect(s.state).toBe('idle');
