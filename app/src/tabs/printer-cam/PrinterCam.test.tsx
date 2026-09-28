@@ -137,4 +137,18 @@ describe('PrinterCam', () => {
     });
     expect(screen.getByLabelText('3D printer camera').tagName).toBe('VIDEO');
   });
+
+  it('cancels the MJPEG stream when it hands back to H.264 (NAKTV-16)', () => {
+    // Removing an <img> does not abort a multipart load on the TV: each
+    // fallback-and-retry cycle left one more connection open to the camera.
+    render(<PrinterCam />);
+    exhaustRetries();
+    const img = screen.getByRole('img', { name: '3D printer camera' });
+    act(() => {
+      vi.advanceTimersByTime(CONFIG.printerCam.videoRetryMs + 100);
+    });
+    expect(img.isConnected).toBe(false);
+    expect(img.getAttribute('src')).not.toContain(CONFIG.printerCam.streamUrl);
+    expect(img.getAttribute('src')).toMatch(/^data:/);
+  });
 });
