@@ -20,6 +20,28 @@ export interface CameraFeedConfig extends VideoFeedConfig, FeedConfig, LiveEdgeC
   liveEdgeCheckMs: number;
 }
 
+/** A 1x1 transparent GIF: something to point a departing <img> at. */
+const BLANK_IMAGE =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * Point an <img> at nothing as React removes it (NAKTV-16).
+ *
+ * Taking an <img> out of the DOM does not abort a multipart MJPEG load on the
+ * TV: the connection lives on until the element is collected, which may be
+ * never. Every fallback-and-retry cycle left one more stream open to the
+ * camera, each one keeping the camera service transcoding for a viewer that
+ * was not there. Changing the src does abort it.
+ */
+function cancelOnRemove(img: HTMLImageElement | null, last: { current: HTMLImageElement | null }) {
+  if (img) {
+    last.current = img;
+    return;
+  }
+  if (last.current) last.current.src = BLANK_IMAGE;
+  last.current = null;
+}
+
 /**
  * The MJPEG fallback, in its own component so its hook only runs while it is
  * on screen — mounted alongside the video it would hold a second connection
@@ -27,10 +49,19 @@ export interface CameraFeedConfig extends VideoFeedConfig, FeedConfig, LiveEdgeC
  */
 function MjpegFeed({ config, ariaLabel }: { config: FeedConfig; ariaLabel: string }) {
   const feed = useMjpegFeed(config);
+  const lastImg = useRef<HTMLImageElement | null>(null);
+  // Stable, so React calls it with null only when the <img> really goes.
+  const imgRef = useCallback((img: HTMLImageElement | null) => cancelOnRemove(img, lastImg), []);
   return (
     <>
       {feed.src && (
-        <img src={feed.src} alt={ariaLabel} onLoad={feed.onLoad} onError={feed.onError} />
+        <img
+          ref={imgRef}
+          src={feed.src}
+          alt={ariaLabel}
+          onLoad={feed.onLoad}
+          onError={feed.onError}
+        />
       )}
       {feed.status && (
         <div className="feed-status" role="status">
