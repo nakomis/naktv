@@ -306,6 +306,24 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The resin layer being exposed (NAKTV-15): top right, under the strip's
+   artist and track. The whole plate at its native 852:432, downscaled so it
+   stays crisp. The border marks the plate's edge - the part is white on
+   black, and without it the plate vanishes into dark footage.
+   Qualified with .camera-feed so it outranks `.camera-feed img` above, whose
+   100% width and height made it cover the whole screen on the TV. */
+.camera-feed .elegoo-layer {
+  position: absolute;
+  top: 9vh;
+  right: 3vh;
+  z-index: 1;
+  width: 22vw;
+  height: auto;
+  aspect-ratio: 852 / 432;
+  background: #000;
+  border: 1px solid var(--overlay-label);
+}
+
 .print-overlay-note {
   color: var(--overlay-label);
   font-size: 2vh;
