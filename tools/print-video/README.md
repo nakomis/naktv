@@ -11,6 +11,13 @@ soundtrack. Made for YouTube (NAKTV-19).
 tools/print-video/capture/start-capture.sh      # prints the capture prefix
 ```
 
+Or arm it before starting the print, and it begins by itself when the printer
+does:
+
+```bash
+setsid nohup tools/print-video/capture/wait-for-print.sh > wait-for-print.log 2>&1 &
+```
+
 That starts four detached jobs, all stopping by themselves when the print
 ends:
 
