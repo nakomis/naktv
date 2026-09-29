@@ -147,6 +147,13 @@ class MusicOrder(unittest.TestCase):
         self.assertEqual([t.title for t in tracks], ["Bee", "Ay"])
 
 
+class Sidecar(unittest.TestCase):
+    def test_records_the_panel_and_each_layer_change(self):
+        side = render.layers_sidecar([(0.0, 3), (5.0, 4)], 0.75, 12.0)
+        self.assertEqual(side["panel"], {"x": 1920 - 32 - 316, "y": 97, "w": 316, "h": 160, "border": 1})
+        self.assertEqual(side["changes"], [[0.0, 3], [5.0, 4]])
+
+
 class Playlist(unittest.TestCase):
     def test_loops_until_the_video_is_covered(self):
         tracks = [Track(Path("a"), 40, "", "a"), Track(Path("b"), 40, "", "b")]

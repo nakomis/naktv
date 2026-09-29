@@ -652,8 +652,7 @@ def ffmpeg_command(
               for i in range(n)]
     joined = "".join(f"[v{i}]" for i in range(n))
     chains.append(f"{joined}concat=n={n}:v=1:a=0[cam]" if n > 1 else "[v0]null[cam]")
-    # Even dimensions: yuv420p can't have odd ones.
-    lw, lh = 2 * round(LAYER_W * layer_scale / 2), 2 * round(LAYER_H * layer_scale / 2)
+    lw, lh = panel_size(layer_scale)
     chains.append(
         f"[{n}:v]fps={FPS},scale={lw}:{lh}:flags=lanczos,format=yuv420p,"
         f"drawbox=x=0:y=0:w=iw:h=ih:color=0xc8c8c8:t=1[layer]"
@@ -673,6 +672,22 @@ def ffmpeg_command(
         cmd += ["-preset", "medium", "-crf", "20"]
     cmd += ["-r", str(FPS), "-movflags", "+faststart", str(out)]
     return cmd
+
+
+def panel_size(layer_scale: float) -> Tuple[int, int]:
+    """The layer panel's size in the output. Even: yuv420p can't have odd ones."""
+    return 2 * round(LAYER_W * layer_scale / 2), 2 * round(LAYER_H * layer_scale / 2)
+
+
+def layers_sidecar(changes: Sequence[Tuple[float, int]], layer_scale: float, length: float) -> dict:
+    """Where the layer panel sits and when each layer is on it, for rebuild.py.
+
+    The panel shows the whole build plate (153.36 x 77.76 mm on the Mars 5
+    Ultra) inside a 1 px border; `changes` are (output seconds, layer)."""
+    w, h = panel_size(layer_scale)
+    return {"panel": {"x": W - LAYER_RIGHT - w, "y": LAYER_TOP, "w": w, "h": h, "border": 1},
+            "video": {"w": W, "h": H}, "length": round(length, 3),
+            "changes": [[round(t, 3), layer] for t, layer in changes]}
 
 
 def filter_quote(path: Path) -> str:
@@ -775,10 +790,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     work = Path(tempfile.mkdtemp(prefix="print-video-"))
     ass_path = work / "overlay.ass"
     ass_path.write_text(build_ass(events))
+    changes = layer_changes(statuses, segments, args.offset)
     layers_script = work / "layers.ffconcat"
-    layers_script.write_text(
-        layer_concat(layer_changes(statuses, segments, args.offset), Path(str(prefix) + "-layers"), length)
-    )
+    layers_script.write_text(layer_concat(changes, Path(str(prefix) + "-layers"), length))
+    sidecar = args.out.expanduser().with_suffix(".layers.json")
+    sidecar.write_text(json.dumps(layers_sidecar(changes, args.layer_scale, length)) + "\n")
     audio_script = None
     if timeline:
         audio_script = work / "audio.ffconcat"
