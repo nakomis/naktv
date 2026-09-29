@@ -136,6 +136,41 @@ def to_volume(images: Sequence[np.ndarray], threshold: int = 128) -> Tuple[np.nd
     return vol, (int(r0), int(c0))
 
 
+def preview(vol: np.ndarray, spacing: Tuple[float, float, float], path: Path, mm_per_px: float = 0.1) -> None:
+    """A picture of the rebuilt solid: the front view (as it printed, hanging
+    from the plate at the top) above the view from above, each depth-shaded so
+    nearer surfaces are lighter. Straight from the voxels; no 3D viewer needed."""
+    from PIL import Image
+
+    dz, dr, dc = spacing
+
+    def shade(solid: np.ndarray) -> np.ndarray:
+        """solid: (depth, h, w) bool, nearest first -> (h, w) greyscale."""
+        hit = solid.any(axis=0)
+        depth = np.argmax(solid, axis=0).astype(np.float32)
+        near = 1.0 - depth / max(solid.shape[0] - 1, 1)
+        # A touch of relief from the depth gradient, so edges read.
+        gy, gx = np.gradient(depth)
+        light = np.clip(0.75 * near + 0.25 - 0.15 * (gx + gy) / 4, 0, 1)
+        return np.where(hit, 40 + 215 * light, 18).astype(np.uint8)
+
+    def resize(img: np.ndarray, h_mm: float, w_mm: float) -> Image.Image:
+        return Image.fromarray(img).resize(
+            (max(1, round(w_mm / mm_per_px)), max(1, round(h_mm / mm_per_px))), Image.LANCZOS)
+
+    # Front: look along rows (from the -Y side, nearest row last); z runs down
+    # from the plate, as printed.
+    front = shade(np.flip(vol, axis=1).transpose(1, 0, 2))
+    top = shade(vol[::-1])  # from above the plate's far side: the last layer is nearest
+    nz, nr, nc = vol.shape
+    f_img = resize(front, nz * dz, nc * dc)
+    t_img = resize(top, nr * dr, nc * dc)
+    canvas = Image.new("L", (max(f_img.width, t_img.width), f_img.height + t_img.height + 10), 0)
+    canvas.paste(f_img, (0, 0))
+    canvas.paste(t_img, (0, f_img.height + 10))
+    canvas.save(path)
+
+
 def surface(vol: np.ndarray, spacing: Tuple[float, float, float]):
     from skimage.measure import marching_cubes
 
@@ -198,6 +233,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--triangles", type=int, default=3_000_000,
                     help="simplify to about this many triangles (0: don't); slicers choke on tens of millions")
     ap.add_argument("--ffmpeg", default="/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+    ap.add_argument("--preview", type=Path, help="also write a PNG of the rebuild (front view, then from above)")
     args = ap.parse_args(argv)
 
     path = args.path.expanduser().resolve()
@@ -217,6 +253,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     vol, origin = to_volume(images, args.threshold)
     print(f"volume {vol.shape} ({vol.sum() / 1e6:.1f} M solid voxels)", file=sys.stderr)
+    if args.preview:
+        preview(vol, (layer_h * args.z_step, mm_px, mm_px), args.preview.expanduser())
+        print(f"preview -> {args.preview}", file=sys.stderr)
     verts, faces = surface(vol, (layer_h * args.z_step, mm_px, mm_px))
     xyz = to_model_coords(verts, origin, mm_px)
     before = len(faces)
