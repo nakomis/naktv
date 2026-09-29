@@ -18,10 +18,19 @@ if [ "$total" -le 0 ]; then
   echo "nothing printing" >&2
   exit 1
 fi
+# Only a 200 is an image. While cthulhu is still fetching the print file from
+# the printer (about 45 s after a print starts) it answers 202 with a JSON
+# progress body, which must not be saved as a layer: wait and ask again.
 for n in $(seq 0 $((total - 1))); do
   f="$DIR/$(printf %04d "$n").png"
   [ -s "$f" ] && continue
-  curl -sf -m 10 -o "$f" "$CTHULHU/api/print/layer?layer=$n" || rm -f "$f"
+  for attempt in $(seq 1 120); do
+    code="$(curl -s -m 10 -o "$f.part" -w '%{http_code}' "$CTHULHU/api/print/layer?layer=$n")"
+    if [ "$code" = 200 ]; then mv "$f.part" "$f"; break; fi
+    rm -f "$f.part"
+    [ "$code" = 202 ] && { sleep 5; continue; }
+    break  # 404 or an error: give up on this layer; render.py falls back to the one before
+  done
   sleep 0.05
 done
 missing=$(( total - $(find "$DIR" -name '*.png' | wc -l) ))
