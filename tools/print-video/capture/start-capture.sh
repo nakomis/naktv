@@ -3,7 +3,9 @@
 #
 #   start-capture.sh [DIR]      (default ~/resin-recordings)
 #
-# Run on the feed host (Rey) once a print is under way. Everything shares a
+# Run on the feed host (Rey) once a print is under way. Four jobs:
+# the recording, the 1 Hz status log, the exact phase changes, and the
+# layer images. Everything shares a
 # prefix, DIR/YYYY-MM-DD-HHMM-<print name>, which is what render.py takes.
 # All three run detached and stop by themselves when the print ends.
 set -eu
@@ -24,4 +26,6 @@ detach() { setsid nohup "$@" > /dev/null 2>&1 < /dev/null & }
 detach "$HERE/record-print.sh" "$PREFIX"
 detach "$HERE/log-status.py" "$PREFIX-status.jsonl"
 detach "$HERE/save-layers.sh" "$PREFIX"
+# Exact phase changes, pushed by cthulhu; ends when cthulhu closes the socket.
+detach bash -c "curl -sN ${CTHULHU/http/ws}/api/ws | python3 -u '$HERE/log-status-events.py' '$PREFIX-status-events.jsonl'"
 echo "$PREFIX"

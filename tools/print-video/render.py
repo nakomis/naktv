@@ -11,8 +11,9 @@ A capture (see capture/) is a set of files sharing one prefix, for example
     PREFIX-layers/NNNN.png  every layer image, from /api/print/layer
 
 Everything is lined up by wall-clock time. The camera runs a little behind
-reality, so status and layer changes are delayed by --offset seconds to land
-when the picture shows them.
+the picture: the printer reports each phase about 4 s after the camera shows
+it. --offset (default -4 s) moves status and layer changes to where the
+picture has them.
 
 The output mimics the TV (app/src/index.css): the strip across the top with
 filename, status, layer, progress, total and remaining time on the left and
@@ -157,6 +158,45 @@ def read_status(path: Path) -> List[Status]:
             )
         )
     return out
+
+
+def read_events(path: Path) -> List[Tuple[float, str, Optional[int]]]:
+    """PREFIX-status-events.jsonl: every change of status label or layer, as
+    cthulhu pushed it (/api/ws), timestamped to the millisecond. Optional."""
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text().splitlines():
+        if line.strip():
+            d = json.loads(line)
+            out.append((float(d["t"]), d.get("label") or "", d.get("layer")))
+    return sorted(out)
+
+
+def merge_events(statuses: Sequence[Status], events: Sequence[Tuple[float, str, Optional[int]]]) -> List[Status]:
+    """Precise label and layer changes from the event log, other fields from the 1 Hz log.
+
+    Where the event log covers, a 1 Hz sample's label and layer are replaced
+    by the latest event before it, and every event becomes a point of its own,
+    so boundaries land to the millisecond rather than up to a second late.
+    """
+    if not events:
+        return list(statuses)
+    import bisect
+    times = [e[0] for e in events]
+    merged: List[Status] = []
+    for s in statuses:
+        i = bisect.bisect_right(times, s.t) - 1
+        if i >= 0:
+            s = Status(**{**s.__dict__, "label": events[i][1], "layer": events[i][2]})
+        merged.append(s)
+    samples = sorted(statuses, key=lambda s: s.t)
+    sample_times = [s.t for s in samples]
+    for t, label, layer in events:
+        j = bisect.bisect_right(sample_times, t) - 1
+        base = samples[max(j, 0)]
+        merged.append(Status(**{**base.__dict__, "t": t, "label": label, "layer": layer}))
+    return sorted(merged, key=lambda s: s.t)
 
 
 # ── Timeline ──────────────────────────────────────────────────────────────
@@ -613,8 +653,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--from-time", help="wall-clock HH:MM[:SS] to start at (on the capture's day)")
     ap.add_argument("--until-time", help="wall-clock HH:MM[:SS] to stop at")
     ap.add_argument("--max-seconds", type=float, help="stop after this much output (for test renders)")
-    ap.add_argument("--offset", type=float, default=2.0,
-                    help="seconds the picture lags reality; status and layer changes are delayed by this")
+    # Calibrated by eye on 29 Sep 2026 (calbits2, millisecond event log): the
+    # printer reports each phase about 4 s after the camera shows it, so status
+    # is shown 4 s *earlier* than cthulhu received it. The 1 Hz log alone
+    # can't be calibrated like this; it smears every boundary by up to 1 s.
+    ap.add_argument("--offset", type=float, default=-4.0,
+                    help="seconds to shift status and layer changes by (negative: earlier)")
     ap.add_argument("--day", type=dt.date.fromisoformat, help="capture date, if the prefix doesn't start with it")
     ap.add_argument("--ffmpeg", default=default_ffmpeg())
     ap.add_argument("--encoder", default="h264_videotoolbox")
@@ -634,6 +678,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     statuses = read_status(Path(str(prefix) + "-status.jsonl"))
     if not statuses:
         raise SystemExit("the status log is empty")
+    events = read_events(Path(str(prefix) + "-status-events.jsonl"))
+    statuses = merge_events(statuses, events)
+    if events:
+        print(f"{len(events)} precise status changes from the event log", file=sys.stderr)
 
     wall_from = parts[0].start
     wall_to = statuses[-1].t + args.offset

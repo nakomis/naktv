@@ -98,6 +98,21 @@ class Description(unittest.TestCase):
         self.assertEqual(render.clock(3725), "1:02:05")
 
 
+class EventLog(unittest.TestCase):
+    def test_events_give_exact_boundaries_and_override_the_samples(self):
+        samples = [status(10, 5, "Lifting"), status(11, 5, "Lifting"), status(12, 5, "Lifting")]
+        events = [(10.4, "Dropping", 6), (11.7, "Exposing", 6)]
+        merged = render.merge_events(samples, events)
+        self.assertEqual([(s.t, s.label, s.layer) for s in merged],
+                         [(10, "Lifting", 5), (10.4, "Dropping", 6), (11, "Dropping", 6),
+                          (11.7, "Exposing", 6), (12, "Exposing", 6)])
+        self.assertEqual(merged[1].remaining_ms, samples[0].remaining_ms)
+
+    def test_no_event_log_leaves_the_samples_alone(self):
+        samples = [status(10, 5)]
+        self.assertEqual(render.merge_events(samples, []), samples)
+
+
 class Playlist(unittest.TestCase):
     def test_loops_until_the_video_is_covered(self):
         tracks = [Track(Path("a"), 40, "", "a"), Track(Path("b"), 40, "", "b")]

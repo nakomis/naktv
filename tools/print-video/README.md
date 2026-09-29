@@ -11,13 +11,14 @@ soundtrack. Made for YouTube (NAKTV-19).
 tools/print-video/capture/start-capture.sh      # prints the capture prefix
 ```
 
-That starts three detached jobs, all stopping by themselves when the print
+That starts four detached jobs, all stopping by themselves when the print
 ends:
 
 | Job | Writes |
 |---|---|
 | `record-print.sh` | `PREFIX-partNN.mkv`: go2rtc's `resin_av`, video only, copied (no re-encode, no extra CPU while the TV watches too). `PREFIX-parts.jsonl`: each part's start time. |
 | `log-status.py` | `PREFIX-status.jsonl`: cthulhu's `/api/status` once a second |
+| `log-status-events.py` | `PREFIX-status-events.jsonl`: every phase and layer change, to the millisecond, as cthulhu pushes it over `/api/ws`. |
 | `save-layers.sh` | `PREFIX-layers/NNNN.png`: every layer image. **These are only available while the print is cthulhu's current job**, so this runs during the print. |
 
 About 1.6 GB an hour, measured. Rey is only the buffer: copy the capture to
@@ -39,9 +40,11 @@ python3 render.py captures/PREFIX --music ~/Music/CC0\ Ambient \
 - **Trimming:** `--from-layer` / `--until-layer` (the first few hours of a long
   print are usually just supports), or `--from-time` / `--until-time`
   (wall-clock `HH:MM[:SS]`). `--max-seconds` for a quick test render.
-- **`--offset`** (default 2 s): how far the picture lags reality. Status and
-  layer changes are delayed by this much, so they change when the plate
-  visibly moves.
+- **`--offset`** (default −4 s): the printer reports each phase about 4 s after
+  the camera shows it, so status and layer changes are moved 4 s earlier.
+  Calibrated by eye against the millisecond event log
+  (`PREFIX-status-events.jsonl`); with only the 1 Hz log, boundaries are
+  smeared by up to a second.
 - **Music:** every audio file in the folder, in name order, looped. Artist
   and title come from `tracks.json` in that folder if present, then the file
   tags, then an `Artist - Title` file name. `tracks.json` also carries each
