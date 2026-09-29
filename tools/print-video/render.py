@@ -635,6 +635,7 @@ def ffmpeg_command(
     out: Path,
     encoder: str,
     bitrate: str,
+    layer_scale: float = 1.0,
 ) -> List[str]:
     cmd = [ffmpeg, "-hide_banner", "-y"]
     for s in segments:
@@ -651,8 +652,10 @@ def ffmpeg_command(
               for i in range(n)]
     joined = "".join(f"[v{i}]" for i in range(n))
     chains.append(f"{joined}concat=n={n}:v=1:a=0[cam]" if n > 1 else "[v0]null[cam]")
+    # Even dimensions: yuv420p can't have odd ones.
+    lw, lh = 2 * round(LAYER_W * layer_scale / 2), 2 * round(LAYER_H * layer_scale / 2)
     chains.append(
-        f"[{n}:v]fps={FPS},scale={LAYER_W}:{LAYER_H}:flags=lanczos,format=yuv420p,"
+        f"[{n}:v]fps={FPS},scale={lw}:{lh}:flags=lanczos,format=yuv420p,"
         f"drawbox=x=0:y=0:w=iw:h=ih:color=0xc8c8c8:t=1[layer]"
     )
     chains.append(f"[cam]{strip_boxes()}[bg]")
@@ -716,6 +719,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--ffmpeg", default=default_ffmpeg())
     ap.add_argument("--encoder", default="h264_videotoolbox")
     ap.add_argument("--bitrate", default="10M")
+    # Smaller than on the TV by default: the panel shows every cross-section
+    # of the model, and at 75% (317 px across the 153 mm plate, ~0.48 mm a
+    # pixel) there is less of the design in it to rebuild from the frames.
+    ap.add_argument("--layer-scale", type=float, default=0.75,
+                    help="layer panel size relative to the TV's (22vw); default 0.75")
     ap.add_argument("--dry-run", action="store_true", help="print the ffmpeg command and stop")
     ap.add_argument("--text-only", action="store_true", help="write the description and comments, don't render")
     args = ap.parse_args(argv)
@@ -776,7 +784,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         audio_script.write_text(audio_concat(timeline))
 
     cmd = ffmpeg_command(args.ffmpeg, segments, layers_script, ass_path, audio_script, length,
-                         args.out.expanduser(), args.encoder, args.bitrate)
+                         args.out.expanduser(), args.encoder, args.bitrate, args.layer_scale)
     print(f"{len(segments)} segment(s), {length / 3600:.2f} h of output; work files in {work}", file=sys.stderr)
     if timeline:
         intro = (f"A resin print ({name_of(statuses)}) on an Elegoo Mars 5 Ultra, "

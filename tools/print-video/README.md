@@ -68,6 +68,9 @@ can look the wrong way round against the picture (a resin printer moves the
 head, not the plate), but the video agrees with the printer and the Elegoo
 app, and that's deliberate.
 
+The layer panel defaults to 75% of the TV's size (`--layer-scale 0.75`), top
+right in the same place; `--layer-scale 1` matches the TV exactly.
+
 Output is 1920x1080 (the 720p camera is scaled up; the overlay is drawn at
 full resolution), H.264 via VideoToolbox at about 7 Mbit/s. On phi's M5 Pro it
 renders at about 10x real time.
