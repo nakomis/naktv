@@ -256,6 +256,13 @@ def layer_time(statuses: Sequence[Status], layer: int) -> float:
 # ── Overlay text ──────────────────────────────────────────────────────────
 
 
+# STATUS is shown exactly as the printer reports it (cthulhu's statusLabel,
+# from SDCP). "Lifting" and "Dropping" can read the wrong way round against
+# what the camera shows - a resin printer lifts and drops the head, not the
+# plate - but they are the printer's words, and the video should agree with the
+# printer and the Elegoo app. Keep them verbatim.
+
+
 def format_duration_ms(ms: Optional[float]) -> str:
     """As printJob.ts's formatDuration: hh:mm, or --:-- when unknown."""
     if ms is None or ms < 0:
