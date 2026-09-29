@@ -36,3 +36,5 @@ while True:
         if key != last:
             out.write(json.dumps({"t": round(t, 3), "label": key[0], "layer": key[1]}) + "\n")
             last = key
+        if key[0] in ("Idle", "Complete", "Stopped", "Cancelled"):
+            sys.exit(0)  # the print is over; closing stdin ends curl too
