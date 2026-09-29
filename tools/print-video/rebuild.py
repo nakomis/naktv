@@ -71,7 +71,7 @@ def tv_layers(prefix: Path, z_step: int) -> Tuple[List[np.ndarray], int]:
     return [blank if i is None else i for i in images], width
 
 
-def video_layers(video: Path, z_step: int, ffmpeg: str) -> Tuple[List[np.ndarray], int]:
+def video_layers(video: Path, z_step: int, ffmpeg: str, hwaccel: bool = False) -> Tuple[List[np.ndarray], int]:
     side = json.loads(video.with_suffix(".layers.json").read_text())
     p, changes, length = side["panel"], side["changes"], side["length"]
     b = p.get("border", 1)
@@ -88,7 +88,12 @@ def video_layers(video: Path, z_step: int, ffmpeg: str) -> Tuple[List[np.ndarray
     # Decode the panel region at 4 fps in one pass (seeking thousands of
     # times is far slower), then pick the frame nearest each sample time.
     fps = 4
-    cmd = [ffmpeg, "-v", "error", "-i", str(video), "-an",
+    # Software decoding by default. On phi's M5 it's ~6x faster than
+    # VideoToolbox for this (1,750 against 280 frames/s: the hardware
+    # frames have to come back to memory for the crop), at about three times
+    # the CPU. --hwaccel trades the time for quiet fans.
+    cmd = [ffmpeg, "-v", "error", *(["-hwaccel", "videotoolbox"] if hwaccel else []),
+           "-i", str(video), "-an",
            "-vf", f"fps={fps},crop={w}:{h}:{p['x'] + b}:{p['y'] + b},format=gray",
            "-f", "rawvideo", "-"]
     frames = {}
@@ -233,6 +238,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--triangles", type=int, default=3_000_000,
                     help="simplify to about this many triangles (0: don't); slicers choke on tens of millions")
     ap.add_argument("--ffmpeg", default="/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+    ap.add_argument("--hwaccel", action="store_true",
+                    help="decode with VideoToolbox: much less CPU, ~6x slower on an M5")
     ap.add_argument("--preview", type=Path, help="also write a PNG of the rebuild (front view, then from above)")
     args = ap.parse_args(argv)
 
@@ -246,7 +253,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.source == "tv":
         images, width = tv_layers(path, args.z_step)
     else:
-        images, width = video_layers(path, args.z_step, args.ffmpeg)
+        images, width = video_layers(path, args.z_step, args.ffmpeg, args.hwaccel)
     mm_px = plate[0] / width
     print(f"{len(images)} layers, {width} px across {plate[0]} mm = {mm_px:.3f} mm/px, "
           f"{layer_h * args.z_step * 1000:.0f} um per slice", file=sys.stderr)
