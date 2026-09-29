@@ -113,6 +113,23 @@ class EventLog(unittest.TestCase):
         self.assertEqual(render.merge_events(samples, []), samples)
 
 
+class MusicOrder(unittest.TestCase):
+    def test_plays_in_manifest_order_not_by_name(self):
+        import json, shutil
+        if not shutil.which("ffprobe"):
+            self.skipTest("needs ffprobe")
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("a.mp3", "b.mp3"):
+                import subprocess
+                subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "anullsrc", "-t", "1",
+                                str(Path(d) / name)], check=True)
+            (Path(d) / "tracks.json").write_text(json.dumps([
+                {"file": "b.mp3", "artist": "B", "title": "Bee"},
+                {"file": "a.mp3", "artist": "A", "title": "Ay"}]))
+            tracks = render.read_tracks(Path(d), "ffprobe")
+        self.assertEqual([t.title for t in tracks], ["Bee", "Ay"])
+
+
 class Playlist(unittest.TestCase):
     def test_loops_until_the_video_is_covered(self):
         tracks = [Track(Path("a"), 40, "", "a"), Track(Path("b"), 40, "", "b")]

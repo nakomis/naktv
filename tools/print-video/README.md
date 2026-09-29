@@ -52,7 +52,10 @@ python3 render.py captures/PREFIX --music ~/Music/CC0\ Ambient \
   Calibrated by eye against the millisecond event log
   (`PREFIX-status-events.jsonl`); with only the 1 Hz log, boundaries are
   smeared by up to a second.
-- **Music:** every audio file in the folder, in name order, looped. Artist
+- **Music:** every audio file in the folder, in `tracks.json` order (else by
+  name), looped if the video is longer. `music/fetch_fma.py` fills the folder
+  with CC0 tracks picked at random from Free Music Archive albums, checking
+  each track's own page for the CC0 licence. Artist
   and title come from `tracks.json` in that folder if present, then the file
   tags, then an `Artist - Title` file name. `tracks.json` also carries each
   track's licence and source URL.

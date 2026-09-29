@@ -501,8 +501,12 @@ def read_manifest(music: Path) -> Dict[str, dict]:
 
 
 def read_tracks(music: Path, ffprobe: str) -> List[Track]:
-    files = [p for p in sorted(music.iterdir()) if p.suffix.lower() in AUDIO_SUFFIXES]
     manifest = read_manifest(music)
+    files = [p for p in sorted(music.iterdir()) if p.suffix.lower() in AUDIO_SUFFIXES]
+    # Play in tracks.json's order (fetch_fma.py writes them as it picks them,
+    # at random) rather than by name, which would group each artist together.
+    order = {name: i for i, name in enumerate(manifest)}
+    files.sort(key=lambda p: (order.get(p.name, len(order)), p.name))
     tracks = []
     for f in files:
         probe = json.loads(
