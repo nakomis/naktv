@@ -273,7 +273,7 @@ def status_events(
         + est_width(name, NAME_PX)
         + FIELD_GAP
         + est_width("STATUS ", LABEL_PX * 1.1)
-        + est_width("Exposing", VALUE_PX)
+        + est_width("Exposing", VALUE_PX) * 0.85  # the estimate runs wide for lower case
         + FIELD_GAP
     )
     head, rest = [], []
@@ -527,7 +527,7 @@ def strip_boxes() -> str:
     solid = round((PAD_TOP + NAME_PX + 3 * VH) * 0.7)
     fade = round((PAD_TOP + NAME_PX + 3 * VH) * 0.3)
     boxes = [f"drawbox=x=0:y=0:w=iw:h={solid}:color=black@0.88:t=fill"]
-    steps = 6
+    steps = 24  # fine enough that the steps don't show as bands
     for i in range(steps):
         alpha = 0.88 * (1 - (i + 0.5) / steps)
         y = solid + round(i * fade / steps)
