@@ -51,7 +51,28 @@ def goo_geometry(path: Path) -> Optional[Tuple[float, float, float]]:
 # ── Reading layers ────────────────────────────────────────────────────────
 
 
-def tv_layers(prefix: Path, z_step: int) -> Tuple[List[np.ndarray], int]:
+def degrade(img: "Image.Image", display_w: int, resolution: float, blur: float) -> "Image.Image":
+    """What a softened TV panel shows: the layer drawn at `resolution` of the
+    panel's size, stretched back to it, then blurred like CSS blur(Npx) (a
+    Gaussian, standard deviation N display pixels). Smoothed both ways, as a
+    canvas drawImage is."""
+    from PIL import Image, ImageFilter
+
+    w = display_w
+    h = round(w * img.height / img.width)
+    if resolution < 1:
+        small = img.resize((max(1, round(w * resolution)), max(1, round(h * resolution))), Image.BILINEAR)
+        img = small.resize((w, h), Image.BILINEAR)
+    else:
+        img = img.resize((w, h), Image.BILINEAR)
+    if blur > 0:
+        img = img.filter(ImageFilter.GaussianBlur(blur))
+    return img
+
+
+def tv_layers(prefix: Path, z_step: int, sim: Optional[Tuple[int, float, float]] = None) -> Tuple[List[np.ndarray], int]:
+    """The saved layer PNGs; with `sim` = (display width, resolution, blur),
+    as a degraded TV panel would show them instead."""
     from PIL import Image
 
     files = sorted(Path(str(prefix) + "-layers").glob("*.png"))
@@ -64,7 +85,10 @@ def tv_layers(prefix: Path, z_step: int) -> Tuple[List[np.ndarray], int]:
         if not f.exists():  # a layer that failed to save: repeat the one before
             images.append(images[-1] if images else None)
             continue
-        a = np.asarray(Image.open(f).convert("L"))
+        im = Image.open(f).convert("L")
+        if sim:
+            im = degrade(im, *sim)
+        a = np.asarray(im)
         width = a.shape[1]
         images.append(a)
     blank = np.zeros_like(next(i for i in images if i is not None))
@@ -242,6 +266,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--triangles", type=int, default=3_000_000,
                     help="simplify to about this many triangles (0: don't); slicers choke on tens of millions")
     ap.add_argument("--ffmpeg", default="/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+    ap.add_argument("--resolution", type=float, default=1.0,
+                    help="tv: simulate the panel drawn at this fraction of its size, then stretched back (e.g. 0.75)")
+    ap.add_argument("--blur", type=float, default=0.0,
+                    help="tv: simulate CSS blur(Npx) on the panel (Gaussian, N display px)")
+    ap.add_argument("--display-width", type=int, default=422,
+                    help="tv simulation: the panel's width on screen in px (default 422, the TV's 22vw)")
     ap.add_argument("--hwaccel", action="store_true",
                     help="decode with VideoToolbox: much less CPU, ~6x slower on an M5")
     ap.add_argument("--preview", type=Path, help="also write a PNG of the rebuild (front view, then from above)")
@@ -255,7 +285,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     layer_h = args.layer_height or (goo[2] if goo else 0.01)
 
     if args.source == "tv":
-        images, width = tv_layers(path, args.z_step)
+        sim = None
+        if args.resolution < 1 or args.blur > 0:
+            sim = (args.display_width, args.resolution, args.blur)
+            print(f"simulating the TV panel at {args.display_width} px, {args.resolution:.0%} resolution, "
+                  f"blur {args.blur} px", file=sys.stderr)
+        images, width = tv_layers(path, args.z_step, sim)
     else:
         images, width = video_layers(path, args.z_step, args.ffmpeg, args.hwaccel)
     mm_px = plate[0] / width

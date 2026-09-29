@@ -636,6 +636,8 @@ def ffmpeg_command(
     encoder: str,
     bitrate: str,
     layer_scale: float = 1.0,
+    layer_resolution: float = 1.0,
+    layer_blur: float = 0.0,
 ) -> List[str]:
     cmd = [ffmpeg, "-hide_banner", "-y"]
     for s in segments:
@@ -653,8 +655,18 @@ def ffmpeg_command(
     joined = "".join(f"[v{i}]" for i in range(n))
     chains.append(f"{joined}concat=n={n}:v=1:a=0[cam]" if n > 1 else "[v0]null[cam]")
     lw, lh = panel_size(layer_scale)
+    # Less detail than the box shows: drawn at `layer_resolution` of the box,
+    # stretched back up, then blurred (gblur's sigma is CSS blur()'s radius).
+    # The blur is what breaks thin support braces in a rebuild (NAKTV-21).
+    soften = ""
+    if layer_resolution < 1:
+        rw, rh = panel_size(layer_scale * layer_resolution)
+        soften += f"scale={rw}:{rh}:flags=bilinear,"
+    soften += f"scale={lw}:{lh}:flags={'bilinear' if layer_resolution < 1 else 'lanczos'},"
+    if layer_blur > 0:
+        soften += f"gblur=sigma={layer_blur},"
     chains.append(
-        f"[{n}:v]fps={FPS},scale={lw}:{lh}:flags=lanczos,format=yuv420p,"
+        f"[{n}:v]fps={FPS},format=gray,{soften}format=yuv420p,"
         f"drawbox=x=0:y=0:w=iw:h=ih:color=0xc8c8c8:t=1[layer]"
     )
     chains.append(f"[cam]{strip_boxes()}[bg]")
@@ -737,8 +749,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # Smaller than on the TV by default: the panel shows every cross-section
     # of the model, and at 75% (317 px across the 153 mm plate, ~0.48 mm a
     # pixel) there is less of the design in it to rebuild from the frames.
-    ap.add_argument("--layer-scale", type=float, default=0.75,
-                    help="layer panel size relative to the TV's (22vw); default 0.75")
+    ap.add_argument("--layer-scale", type=float, default=1.0,
+                    help="layer panel box size relative to the TV's (22vw); default 1: the same box")
+    # Martin's choice (29 Sep 2026): the TV's box size, but only 75% of its
+    # detail, and softened. A rebuild from such a video loses fine texture and,
+    # with the blur, thin support braces too (NAKTV-21).
+    ap.add_argument("--layer-resolution", type=float, default=0.75,
+                    help="detail in the layer panel, relative to its box; default 0.75")
+    ap.add_argument("--layer-blur", type=float, default=1.0,
+                    help="Gaussian blur on the layer panel, in px (like CSS blur()); default 1")
     ap.add_argument("--dry-run", action="store_true", help="print the ffmpeg command and stop")
     ap.add_argument("--text-only", action="store_true", help="write the description and comments, don't render")
     ap.add_argument("--intro", help="opening paragraph of the YouTube description (default: a generic line)")
@@ -794,14 +813,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     layers_script = work / "layers.ffconcat"
     layers_script.write_text(layer_concat(changes, Path(str(prefix) + "-layers"), length))
     sidecar = args.out.expanduser().with_suffix(".layers.json")
-    sidecar.write_text(json.dumps(layers_sidecar(changes, args.layer_scale, length)) + "\n")
+    side = layers_sidecar(changes, args.layer_scale, length)
+    side["panel"].update(resolution=args.layer_resolution, blur=args.layer_blur)
+    sidecar.write_text(json.dumps(side) + "\n")
     audio_script = None
     if timeline:
         audio_script = work / "audio.ffconcat"
         audio_script.write_text(audio_concat(timeline))
 
     cmd = ffmpeg_command(args.ffmpeg, segments, layers_script, ass_path, audio_script, length,
-                         args.out.expanduser(), args.encoder, args.bitrate, args.layer_scale)
+                         args.out.expanduser(), args.encoder, args.bitrate, args.layer_scale,
+                         args.layer_resolution, args.layer_blur)
     print(f"{len(segments)} segment(s), {length / 3600:.2f} h of output; work files in {work}", file=sys.stderr)
     if timeline:
         intro = args.intro or (f"A resin print ({name_of(statuses)}) on an Elegoo Mars 5 Ultra, "

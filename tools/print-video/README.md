@@ -68,8 +68,12 @@ can look the wrong way round against the picture (a resin printer moves the
 head, not the plate), but the video agrees with the printer and the Elegoo
 app, and that's deliberate.
 
-The layer panel defaults to 75% of the TV's size (`--layer-scale 0.75`), top
-right in the same place; `--layer-scale 1` matches the TV exactly.
+The layer panel is the TV's size and place (`--layer-scale 1`), but carries
+less detail: drawn at 75% of its box (`--layer-resolution 0.75`) and blurred
+by 1 px (`--layer-blur 1`). Rebuilding a model from such a video loses the fine
+texture, and the blur breaks up thin support braces, which is what makes a
+copy hard to print (NAKTV-21). `--layer-resolution 1 --layer-blur 0` gives
+the TV's full detail.
 
 Output is 1920x1080 (the 720p camera is scaled up; the overlay is drawn at
 full resolution), H.264 via VideoToolbox at about 7 Mbit/s. On phi's M5 Pro it
