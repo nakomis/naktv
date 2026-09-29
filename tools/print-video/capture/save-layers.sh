@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Save every layer image of the current print into PREFIX-layers/NNNN.png.
+# Save the current print's file (PREFIX.goo) and every layer image
+# (PREFIX-layers/NNNN.png).
 #
 #   save-layers.sh PREFIX
 #
@@ -27,6 +28,21 @@ for wait in $(seq 1 720); do
   [ "$code" = 202 ] || break
   sleep 5
 done
+
+# Keep the print file itself as well: the complete original, at full
+# resolution and with every layer's exposure time, which can be decoded again
+# any time. cthulhu keeps only the current print's copy (it deletes the others
+# when a new print starts), so take it now, straight out of its volume.
+task="$(curl -s -m 5 "$CTHULHU/api/status" | python3 -c 'import json,sys; print(json.load(sys.stdin)["print"].get("taskId") or "")')"
+if [ -n "$task" ] && [ ! -s "$PREFIX.goo" ]; then
+  if docker exec "${CTHULHU_CONTAINER:-cthulhu}" cat "/data/print-files/$task.goo" > "$PREFIX.goo.part" 2>/dev/null \
+     && [ -s "$PREFIX.goo.part" ]; then
+    mv "$PREFIX.goo.part" "$PREFIX.goo"
+  else
+    rm -f "$PREFIX.goo.part"
+    echo "couldn't copy the print file for task $task" >&2
+  fi
+fi
 
 # Only a 200 is an image. While cthulhu is still fetching the print file from
 # the printer (about 45 s after a print starts) it answers 202 with a JSON

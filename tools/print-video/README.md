@@ -26,7 +26,7 @@ ends:
 | `record-print.sh` | `PREFIX-partNN.mkv`: go2rtc's `resin_av`, video only, copied (no re-encode, no extra CPU while the TV watches too). `PREFIX-parts.jsonl`: each part's start time. |
 | `log-status.py` | `PREFIX-status.jsonl`: cthulhu's `/api/status` once a second |
 | `log-status-events.py` | `PREFIX-status-events.jsonl`: every phase and layer change, to the millisecond, as cthulhu pushes it over `/api/ws`. |
-| `save-layers.sh` | `PREFIX-layers/NNNN.png`: every layer image. **These are only available while the print is cthulhu's current job**, so this runs during the print. |
+| `save-layers.sh` | `PREFIX.goo`: the print file itself, copied out of cthulhu's volume (full resolution, per-layer exposure times). `PREFIX-layers/NNNN.png`: every layer image, which render.py uses. **These are only available while the print is cthulhu's current job**, so this runs during the print. |
 
 About 1.6 GB an hour, measured. Rey is only the buffer: copy the capture to
 phi to render, and archive it to Luke/Leia at leisure.
