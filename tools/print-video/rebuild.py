@@ -74,7 +74,11 @@ def tv_layers(prefix: Path, z_step: int) -> Tuple[List[np.ndarray], int]:
 def video_layers(video: Path, z_step: int, ffmpeg: str, hwaccel: bool = False) -> Tuple[List[np.ndarray], int]:
     side = json.loads(video.with_suffix(".layers.json").read_text())
     p, changes, length = side["panel"], side["changes"], side["length"]
-    b = p.get("border", 1)
+    # Stay clear of the panel's grey border (200, above the threshold):
+    # compression bleeds it a pixel or two inwards, and a line in every frame
+    # becomes a wall through the whole rebuild. Losing 2 px of plate edge on
+    # each side costs nothing; nothing prints that close to the edge.
+    b = p.get("border", 1) + 2
     w, h = p["w"] - 2 * b, p["h"] - 2 * b
     # One sample time per layer: the middle of its time on screen.
     samples: List[Tuple[int, float]] = []
