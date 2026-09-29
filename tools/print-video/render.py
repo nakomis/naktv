@@ -726,6 +726,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="layer panel size relative to the TV's (22vw); default 0.75")
     ap.add_argument("--dry-run", action="store_true", help="print the ffmpeg command and stop")
     ap.add_argument("--text-only", action="store_true", help="write the description and comments, don't render")
+    ap.add_argument("--intro", help="opening paragraph of the YouTube description (default: a generic line)")
     args = ap.parse_args(argv)
 
     # Absolute: the concat scripts live in a temp folder, and ffmpeg resolves
@@ -787,8 +788,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          args.out.expanduser(), args.encoder, args.bitrate, args.layer_scale)
     print(f"{len(segments)} segment(s), {length / 3600:.2f} h of output; work files in {work}", file=sys.stderr)
     if timeline:
-        intro = (f"A resin print ({name_of(statuses)}) on an Elegoo Mars 5 Ultra, "
-                 f"in real time, with the layer being exposed shown top right.")
+        intro = args.intro or (f"A resin print ({name_of(statuses)}) on an Elegoo Mars 5 Ultra, "
+                               f"in real time, with the layer being exposed shown top right.")
         text = description(timeline, intro)
         notes = args.out.expanduser().with_suffix(".description.txt")
         notes.write_text(text)
