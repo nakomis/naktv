@@ -537,26 +537,64 @@ def clock(seconds: float) -> str:
     return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60:02d}:{s % 60:02d}"
 
 
-def description(timeline: Sequence[Tuple[float, Track]]) -> str:
-    """Text for the YouTube description: credits for every track used, then a
-    timestamped tracklist (YouTube makes chapters of it: first entry at 0:00,
-    at least three entries, each at least ten seconds long)."""
-    lines = ["Music:"]
-    seen = set()
+DESCRIPTION_LIMIT = 5000  # YouTube's description cap, in characters
+COMMENT_LIMIT = 10000  # and a comment's
+
+
+def credit_line(t: Track) -> str:
+    return f"{t.artist} \u2013 {t.title}" if t.artist else t.title
+
+
+def album_url(track_url: str) -> str:
+    """FMA track pages sit under their album: .../music/ARTIST/ALBUM/TRACK/."""
+    parts = track_url.rstrip("/").split("/")
+    return "/".join(parts[:-1]) + "/" if len(parts) > 6 else track_url
+
+
+def unique_tracks(timeline: Sequence[Tuple[float, Track]]) -> List[Track]:
+    seen, out = set(), []
     for _, t in timeline:
-        if t.path in seen:
-            continue
-        seen.add(t.path)
-        credit = f"{t.artist} \u2013 {t.title}" if t.artist else t.title
-        if t.licence:
-            credit += f" ({t.licence})"
-        lines.append(credit)
+        if t.path not in seen:
+            seen.add(t.path)
+            out.append(t)
+    return out
+
+
+def description(timeline: Sequence[Tuple[float, Track]], intro: str = "") -> str:
+    """The YouTube description: a short intro, the music credited by album, then
+    a timestamped tracklist (YouTube makes chapters of it: first entry at 0:00,
+    at least three, each at least ten seconds). Per-track credits with links
+    are too long for the 5,000-character cap and go in comments() instead."""
+    tracks = unique_tracks(timeline)
+    albums: Dict[str, Tuple[str, str]] = {}
+    for t in tracks:
         if t.source_url:
-            lines.append(f"  {t.source_url}")
-    lines += ["", "Tracklist:"]
-    lines += [f"{clock(at)} {t.artist} \u2013 {t.title}" if t.artist else f"{clock(at)} {t.title}"
-              for at, t in timeline]
+            albums.setdefault(album_url(t.source_url), (t.artist, t.licence))
+    licences = sorted({t.licence for t in tracks if t.licence})
+    lines = [intro] if intro else []
+    lines.append("Music" + (f" (all {licences[0]})" if len(licences) == 1 else "") + ", from Free Music Archive:")
+    lines += [f"{artist}: {url}" for url, (artist, _) in albums.items()]
+    lines += ["Every track, with its own link, is in the pinned comment.", "", "Tracklist:"]
+    lines += [f"{clock(at)} {credit_line(t)}" for at, t in timeline]
     return "\n".join(lines) + "\n"
+
+
+def comments(timeline: Sequence[Tuple[float, Track]]) -> List[str]:
+    """Per-track credits with links, split into comments under YouTube's cap."""
+    blocks = []
+    for t in unique_tracks(timeline):
+        block = credit_line(t) + (f" ({t.licence})" if t.licence else "")
+        if t.source_url:
+            block += "\n" + t.source_url
+        blocks.append(block)
+    out, cur = [], "Music credits:"
+    for b in blocks:
+        if len(cur) + 2 + len(b) > COMMENT_LIMIT:
+            out.append(cur)
+            cur = "Music credits (continued):"
+        cur += "\n\n" + b
+    out.append(cur)
+    return out
 
 
 def probe_duration(path: Path, ffprobe: str) -> Optional[float]:
@@ -649,6 +687,10 @@ def default_ffmpeg() -> str:
 # ── Main ──────────────────────────────────────────────────────────────────
 
 
+def name_of(statuses: Sequence[Status]) -> str:
+    return next((s.filename for s in statuses if s.filename), "print")
+
+
 def parse_clock(value: str, day: dt.date) -> float:
     h, m, *s = (int(x) for x in value.split(":"))
     return dt.datetime.combine(day, dt.time(h, m, s[0] if s else 0)).timestamp()
@@ -675,6 +717,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--encoder", default="h264_videotoolbox")
     ap.add_argument("--bitrate", default="10M")
     ap.add_argument("--dry-run", action="store_true", help="print the ffmpeg command and stop")
+    ap.add_argument("--text-only", action="store_true", help="write the description and comments, don't render")
     args = ap.parse_args(argv)
 
     # Absolute: the concat scripts live in a temp folder, and ffmpeg resolves
@@ -736,9 +779,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                          args.out.expanduser(), args.encoder, args.bitrate)
     print(f"{len(segments)} segment(s), {length / 3600:.2f} h of output; work files in {work}", file=sys.stderr)
     if timeline:
+        intro = (f"A resin print ({name_of(statuses)}) on an Elegoo Mars 5 Ultra, "
+                 f"in real time, with the layer being exposed shown top right.")
+        text = description(timeline, intro)
         notes = args.out.expanduser().with_suffix(".description.txt")
-        notes.write_text(description(timeline))
-        print(f"YouTube description: {notes}", file=sys.stderr)
+        notes.write_text(text)
+        print(f"YouTube description: {notes} ({len(text)} characters)", file=sys.stderr)
+        if len(text) > DESCRIPTION_LIMIT:
+            print(f"  WARNING: over YouTube's {DESCRIPTION_LIMIT}-character limit", file=sys.stderr)
+        for i, c in enumerate(comments(timeline), 1):
+            path = args.out.expanduser().with_suffix(f".comment{i}.txt")
+            path.write_text(c + "\n")
+            print(f"Pinned comment {i}: {path} ({len(c)} characters)", file=sys.stderr)
+    if args.text_only:
+        return 0
     if args.dry_run:
         print(" ".join(shlex.quote(c) for c in cmd))
         return 0

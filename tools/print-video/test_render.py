@@ -84,15 +84,32 @@ class Events(unittest.TestCase):
 
 
 class Description(unittest.TestCase):
-    def test_credits_each_track_once_then_lists_every_play(self):
-        a = Track(Path("a.mp3"), 70, "HoliznaCC0", "Clouds", "CC0 1.0", "https://fma/clouds")
-        b = Track(Path("b.mp3"), 70, "John Bartmann", "sanza-waves", "CC0 1.0", "https://fma/sanza")
-        text = render.description(render.playlist_timeline([a, b], 200))
-        self.assertEqual(text.count("https://fma/clouds"), 1)
-        self.assertIn("HoliznaCC0 \u2013 Clouds (CC0 1.0)", text)
+    def tracks(self):
+        a = Track(Path("a.mp3"), 70, "HoliznaCC0", "Clouds", "CC0 1.0",
+                  "https://freemusicarchive.org/music/holiznacc0/lo-fi-and-chill/clouds/")
+        b = Track(Path("b.mp3"), 70, "John Bartmann", "sanza-waves", "CC0 1.0",
+                  "https://freemusicarchive.org/music/John_Bartmann/straylight/sanza-waves/")
+        return a, b
+
+    def test_credits_by_album_then_a_chapter_tracklist(self):
+        a, b = self.tracks()
+        text = render.description(render.playlist_timeline([a, b], 200), "Intro.")
+        self.assertTrue(text.startswith("Intro.\n"))
+        self.assertIn("Music (all CC0 1.0)", text)
+        self.assertIn("HoliznaCC0: https://freemusicarchive.org/music/holiznacc0/lo-fi-and-chill/", text)
+        self.assertNotIn("/clouds/", text)  # per-track links go in the comment
         self.assertIn("00:00 HoliznaCC0 \u2013 Clouds", text)
         self.assertIn("01:10 John Bartmann \u2013 sanza-waves", text)
         self.assertIn("02:20 HoliznaCC0 \u2013 Clouds", text)
+
+    def test_comments_carry_every_track_link_once_and_split_under_the_cap(self):
+        a, b = self.tracks()
+        [c] = render.comments(render.playlist_timeline([a, b], 200))
+        self.assertEqual(c.count("/clouds/"), 1)
+        many = [Track(Path(f"{i}.mp3"), 60, "A", f"T{i}", "CC0 1.0", "https://x/" + "y" * 200) for i in range(100)]
+        chunks = render.comments(render.playlist_timeline(many, 6000))
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(len(c) <= render.COMMENT_LIMIT for c in chunks))
 
     def test_hour_long_videos_get_hours_in_their_timestamps(self):
         self.assertEqual(render.clock(3725), "1:02:05")
