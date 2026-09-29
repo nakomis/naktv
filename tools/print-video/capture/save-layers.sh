@@ -18,6 +18,16 @@ if [ "$total" -le 0 ]; then
   echo "nothing printing" >&2
   exit 1
 fi
+# cthulhu fetches the whole print file from the printer before it can decode
+# any layer, over the printer's WiFi: 45 s for a small file, a quarter of an
+# hour for a 500 MB one. Wait for that once, up to an hour, rather than per
+# layer.
+for wait in $(seq 1 720); do
+  code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$CTHULHU/api/print/layer?layer=0")"
+  [ "$code" = 202 ] || break
+  sleep 5
+done
+
 # Only a 200 is an image. While cthulhu is still fetching the print file from
 # the printer (about 45 s after a print starts) it answers 202 with a JSON
 # progress body, which must not be saved as a layer: wait and ask again.
