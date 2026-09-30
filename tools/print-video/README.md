@@ -83,6 +83,29 @@ Needs **ffmpeg with libass**, which is Homebrew's `ffmpeg-full` (keg-only, so it
 sits alongside the plain `ffmpeg`; `render.py` finds it). The plain formula has
 no text rendering. Python 3.9+, standard library only.
 
+## Round-tripping a .goo through its layer images
+
+`goo/goopng.c` decodes every layer of an Elegoo `.goo` to a full-resolution
+1-bit PNG, and builds a `.goo` back from such PNGs. It proves that the layer
+images are the whole of the print: the inverted Sad cats (5,231 layers,
+8520x4320) came back **byte-identical** (BCON-63).
+
+```bash
+cc -O2 -o goopng goo/goopng.c -lz
+./goopng goo2png PREFIX.goo png/                # 96 s on phi
+./goopng png2goo HEADER.goo png/ rebuilt.goo    # 52 s
+```
+
+`png2goo` takes only the header from `HEADER.goo`: thumbnails and print
+settings, which are metadata. Each layer's 66-byte definition is generated from
+those settings (height, bottom and normal exposure, 5 transition layers), and
+its image comes from the PNG. With a header from a *different* print, where
+only the layer count has changed, the file hashes differ but everything from
+the first layer onwards (`tail -c +195478`) hashes the same.
+
+Black-and-white layers only, which is what Chitubox writes without
+anti-aliasing. Standard C and zlib, so it has no other dependencies.
+
 ## Tests
 
 ```bash
