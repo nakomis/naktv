@@ -84,6 +84,22 @@ publish() {
     sum="$(shasum -a 256 "$src" | cut -d' ' -f1)"
     printf '%s  %s\n' "$sum" "$(basename "$dest")" > "$WORK/sum"
 
+    # Already published? ALLOW_ONCE refuses a re-upload, so compare checksums
+    # instead: identical is fine (skip it, which is what lets a new feed
+    # version go out without bumping the third-party binaries alongside it);
+    # different means someone is trying to change a published version.
+    local remote
+    remote="$(curl -sf --cert "$CLIENT_CERT" --key "$CLIENT_KEY" "${url}.sha256" | cut -d' ' -f1 || true)"
+    if [[ -n "$remote" ]]; then
+        if [[ "$remote" == "$sum" ]]; then
+            echo "  already published, identical  $url"
+            return 0
+        fi
+        echo "  REFUSED $url is already published with different contents" >&2
+        echo "  (sha256 there: $remote; here: $sum). Bump the version." >&2
+        exit 1
+    fi
+
     for pair in "$src:$url" "$WORK/sum:${url}.sha256"; do
         local file="${pair%%:*}" target="${pair#*:}"
         local code
