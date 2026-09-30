@@ -40,7 +40,20 @@ File → Export → Wavefront (.obj) with *Apply Modifiers* and *Render*
 evaluation. Move a whole set (body, hair and print objects) together: the
 hair is positioned relative to its body, so moving one alone detaches it.
 
-The hair versions reach 2.5 mm below the base (hair under the paws and tail),
+**Printing upright doesn't work for the hair**: resin builds up from the
+plate, and drooping strands start at their tips, in thin air. Print them
+upside down, head on the plate, so strands grow away from it. The hair
+generator's *Min slope* (gravity) setting makes sure they do: any strand
+shallower than that angle below horizontal is bent down to it, and hair on
+the top of the head and back lies flat into the body. It's 45° on
+`SadCat_50_Hair` and off (0) on the full-size one.
+
+Print-ready files on Leia only, 41 mm × 1 mm disc under the head:
+`sad-cat-50-inverted.obj`, `sad-cat-50-displaced-inverted.obj` and
+`sad-cat-50-hair-gravity-inverted.obj` (the `-base` and plain
+`-hair-inverted` ones are superseded).
+
+The upright hair versions reach 2.5 mm below the base (hair under the paws and tail),
 so cut at z = 0 before printing flat.
 
 Fur grows on the eyes, bell and collar too, and the hair tips (0.1 mm) won't
