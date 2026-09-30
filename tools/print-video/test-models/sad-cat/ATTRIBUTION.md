@@ -48,6 +48,11 @@ shallower than that angle below horizontal is bent down to it, and hair on
 the top of the head and back lies flat into the body. It's 45° on
 `SadCat_50_Hair` and off (0) on the full-size one.
 
+*Gravity up* reverses it: every strand points at least *Min slope* upwards,
+so the cat prints the right way up, on a plinth, with each strand growing
+away from the plate. `SadCat_50_HairUp` does that (45°, no droop), and looks
+like it has licked a battery. On Leia: `sad-cat-50-hair-up-base.obj`.
+
 Print-ready files on Leia only, 41 mm × 1 mm disc under the head:
 `sad-cat-50-inverted.obj`, `sad-cat-50-displaced-inverted.obj` and
 `sad-cat-50-hair-gravity-inverted.obj` (the `-base` and plain
