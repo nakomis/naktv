@@ -89,6 +89,7 @@ class Track:
     licence: str = ""
     source_url: str = ""
     download_url: str = ""
+    licence_url: str = ""
 
 
 def read_parts(prefix: Path, day: Optional[dt.date] = None) -> List[Part]:
@@ -501,34 +502,36 @@ def read_manifest(music: Path) -> Dict[str, dict]:
 
 
 def read_tracks(music: Path, ffprobe: str) -> List[Track]:
+    """The playlist: tracks.json's entries in its order (fetch_fma.py writes
+    them as it picks them, at random, and a crawl files them by artist), or
+    every audio file under the folder, by name, when there is no manifest."""
     manifest = read_manifest(music)
-    files = [p for p in sorted(music.iterdir()) if p.suffix.lower() in AUDIO_SUFFIXES]
-    # Play in tracks.json's order (fetch_fma.py writes them as it picks them,
-    # at random) rather than by name, which would group each artist together.
-    order = {name: i for i, name in enumerate(manifest)}
-    files.sort(key=lambda p: (order.get(p.name, len(order)), p.name))
+    if manifest:
+        files = [music / f for f in manifest if (music / f).exists()]
+    else:
+        files = sorted(p for p in music.rglob("*") if p.suffix.lower() in AUDIO_SUFFIXES)
     tracks = []
     for f in files:
-        probe = json.loads(
-            subprocess.run(
-                [ffprobe, "-v", "error", "-show_entries", "format=duration:format_tags",
-                 "-of", "json", str(f)],
-                check=True, capture_output=True, text=True,
-            ).stdout
-        )
-        fmt = probe.get("format", {})
-        tags = {k.lower(): v for k, v in (fmt.get("tags") or {}).items()}
-        artist, title = tags.get("artist"), tags.get("title")
-        if not (artist and title):
+        info = manifest.get(str(f.relative_to(music)), {})
+        duration = info.get("duration")
+        artist, title = info.get("artist"), info.get("title")
+        if not (duration and artist and title):
+            probe = json.loads(
+                subprocess.run(
+                    [ffprobe, "-v", "error", "-show_entries", "format=duration:format_tags",
+                     "-of", "json", str(f)],
+                    check=True, capture_output=True, text=True,
+                ).stdout
+            )
+            fmt = probe.get("format", {})
+            tags = {k.lower(): v for k, v in (fmt.get("tags") or {}).items()}
+            duration = duration or float(fmt["duration"])
             m = re.match(r"(.+?) - (.+)$", f.stem)
-            artist = artist or (m.group(1) if m else "")
-            title = title or (m.group(2) if m else f.stem)
-        info = manifest.get(f.name, {})
-        tracks.append(Track(
-            f, float(fmt["duration"]),
-            info.get("artist") or artist, info.get("title") or title,
-            info.get("licence", ""), info.get("source_url", ""), info.get("download_url", ""),
-        ))
+            artist = artist or tags.get("artist") or (m.group(1) if m else "")
+            title = title or tags.get("title") or (m.group(2) if m else f.stem)
+        tracks.append(Track(f, float(duration), artist, title, info.get("licence", ""),
+                            info.get("source_url", ""), info.get("download_url", ""),
+                            info.get("licence_url", "")))
     return tracks
 
 
@@ -560,7 +563,16 @@ def unique_tracks(timeline: Sequence[Tuple[float, Track]]) -> List[Track]:
     return out
 
 
-def description(timeline: Sequence[Tuple[float, Track]], intro: str = "") -> str:
+def trimmed_track(timeline: Sequence[Tuple[float, Track]], length: Optional[float]) -> bool:
+    """Whether the last track in the video is cut off before its end. CC BY
+    asks you to say when a work has been changed; this is the one change."""
+    if not timeline or length is None:
+        return False
+    at, t = timeline[-1]
+    return at + t.duration > length + 0.5
+
+
+def description(timeline: Sequence[Tuple[float, Track]], intro: str = "", length: Optional[float] = None) -> str:
     """The YouTube description: a short intro, the music credited by album, then
     a timestamped tracklist (YouTube makes chapters of it: first entry at 0:00,
     at least three, each at least ten seconds). Per-track credits with links
@@ -571,10 +583,14 @@ def description(timeline: Sequence[Tuple[float, Track]], intro: str = "") -> str
         if t.source_url:
             albums.setdefault(album_url(t.source_url), (t.artist, t.licence))
     licences = sorted({t.licence for t in tracks if t.licence})
+    mixed = len(licences) > 1
     lines = [intro] if intro else []
     lines.append("Music" + (f" (all {licences[0]})" if len(licences) == 1 else "") + ", from Free Music Archive:")
-    lines += [f"{artist}: {url}" for url, (artist, _) in albums.items()]
-    lines += ["Every track, with its own link, is in the pinned comment.", "", "Tracklist:"]
+    lines += [f"{artist}: {url}" + (f" ({lic})" if mixed and lic else "") for url, (artist, lic) in albums.items()]
+    lines.append("Every track, with its own link and licence, is in the pinned comment.")
+    if trimmed_track(timeline, length):
+        lines.append(f"The last track, {credit_line(timeline[-1][1])}, is cut short to fit the video.")
+    lines += ["", "Tracklist:"]
     lines += [f"{clock(at)} {credit_line(t)}" for at, t in timeline]
     return "\n".join(lines) + "\n"
 
@@ -583,7 +599,8 @@ def comments(timeline: Sequence[Tuple[float, Track]]) -> List[str]:
     """Per-track credits with links, split into comments under YouTube's cap."""
     blocks = []
     for t in unique_tracks(timeline):
-        block = credit_line(t) + (f" ({t.licence})" if t.licence else "")
+        block = credit_line(t) + (f" ({t.licence}" + (f", {t.licence_url}" if t.licence_url else "") + ")"
+                                  if t.licence else "")
         if t.source_url:
             block += "\n" + t.source_url
         blocks.append(block)
@@ -828,7 +845,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if timeline:
         intro = args.intro or (f"A resin print ({name_of(statuses)}) on an Elegoo Mars 5 Ultra, "
                                f"in real time, with the layer being exposed shown top right.")
-        text = description(timeline, intro)
+        text = description(timeline, intro, length)
         notes = args.out.expanduser().with_suffix(".description.txt")
         notes.write_text(text)
         print(f"YouTube description: {notes} ({len(text)} characters)", file=sys.stderr)
