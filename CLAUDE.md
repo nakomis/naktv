@@ -80,8 +80,10 @@ docs/       logo, candidates, architecture diagram
 
 ## Architecture diagrams
 
-Source: `docs/architecture/naktv.drawio`. The SVG is regenerated on commit by
-`.githooks/pre-commit`.
+Sources in `docs/architecture/`: `naktv.drawio` (the whole system),
+`feed.drawio` (the FDM feed) and `print-video.drawio` (the resin print: live
+to the TV, captured separately, rendered for YouTube). The SVGs are
+regenerated on commit by `.githooks/pre-commit`.
 
 To activate the hook after cloning:
 ```bash
