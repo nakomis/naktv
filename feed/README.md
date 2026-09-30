@@ -84,6 +84,9 @@ is sound as well.
 | `bin/pcm-pacer.py` | Paces to real time, pads silence when idle, and owns the pipe |
 | `bin/now-playing.py` | librespot `--onevent` hook: writes `now-playing.json` (see "Now playing" below) |
 | `bin/now-playing-server.py` | Serves `now-playing.json` over HTTP for the TV to poll |
+| `bin/library-feed.sh` | **Long-lived**: library player → pacer → the library's named pipe (NAKTV-26) |
+| `bin/library-player.py` | Random tracks from the CC library, decoded to the same PCM librespot writes |
+| `bin/music-switch.py` | Drains both pipes, forwards the selected one into the pipe go2rtc reads |
 
 ### Why librespot is not a go2rtc producer
 
@@ -188,6 +191,33 @@ the same way as everything else in `bin/`.
 
 Restarting `spotify-connect.sh` to pick up a change here must be done from a
 **GUI terminal on phi**, never over ssh — see "Operating it" below for why.
+
+## Music source: Spotify or the library
+
+The Settings tab can swap Spotify for random tracks from the CC0 / CC BY
+library on Leia (NAKTV-26), which `tools/print-video/music/fetch_fma.py`
+fills. The switch is made on the feed box, not the TV:
+
+```
+librespot      → pcm-pacer → spotify.pcm ┐
+library-player → pcm-pacer → library.pcm ┴→ music-switch → music.pcm → spotify-audio.sh → go2rtc
+```
+
+- Both sources run all the time, each paced to real time, and
+  `music-switch.py` drains both and forwards one. The camera streams and
+  their encoders are untouched, so a switch lands in about half a second
+  without reconnecting the TV, and a recorded print gets whatever the TV
+  was playing.
+- The selection is a file, `music-source` in `NOW_PLAYING_DIR`, which the
+  now-playing server reads and writes: `GET /music-source` returns
+  `{"source": "spotify"}`, and `POST /music-source` with
+  `{"source": "library"}` changes it. It lives under `/run`, so a reboot
+  goes back to Spotify.
+- With the library selected, `/now-playing.json` serves
+  `now-playing-library.json` instead, so the overlay shows the library
+  track. It carries the licence as well.
+- Every library track played is appended to `library-plays.jsonl` in the
+  log directory, with its licence and source, so a video can credit it.
 
 ## Operating it
 

@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import { vi } from 'vitest';
+import { musicSourceUrl } from '../../config';
 import { Keys } from '../../keys';
 import { DEFAULT_SETTINGS, getSettings, resetSettingsForTests } from '../../settings';
 import { SettingsTab } from './Settings';
@@ -23,8 +25,29 @@ function editHost() {
   press(Keys.Enter);
 }
 
+/**
+ * A stand-in for the feed box's /music-source: answers GET with `source`,
+ * and POST by adopting whatever was asked for. `null` means unreachable.
+ */
+function stubFeedBox(initial: string | null) {
+  let source = initial;
+  const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (source === null) throw new TypeError('Failed to fetch');
+    if (init?.method === 'POST') source = JSON.parse(String(init.body)).source;
+    return new Response(JSON.stringify({ source }), { status: 200 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
+
 describe('SettingsTab', () => {
-  beforeEach(resetSettingsForTests);
+  beforeEach(() => {
+    resetSettingsForTests();
+    stubFeedBox('spotify');
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   it('shows the current host as four octets', () => {
     render(<SettingsTab />);
@@ -122,5 +145,47 @@ describe('SettingsTab', () => {
     press(Keys.Down);
     press(Keys.Enter);
     expect(getSettings().showPrintOverlay).toBe(false);
+  });
+
+  describe('music', () => {
+    function toMusic() {
+      press(Keys.Down);
+      press(Keys.Down);
+    }
+
+    it('shows the source the feed box reports', async () => {
+      render(<SettingsTab />);
+      expect(await screen.findByText('Spotify')).toBeInTheDocument();
+    });
+
+    it('switches to the library on OK, and back again', async () => {
+      const fetchMock = stubFeedBox('spotify');
+      render(<SettingsTab />);
+      await screen.findByText('Spotify');
+      toMusic();
+      press(Keys.Enter);
+      expect(await screen.findByText('Library')).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledWith(
+        musicSourceUrl(),
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ source: 'library' }) }),
+      );
+      press(Keys.Enter);
+      expect(await screen.findByText('Spotify')).toBeInTheDocument();
+    });
+
+    it('says so when the feed box cannot be reached', async () => {
+      stubFeedBox(null);
+      render(<SettingsTab />);
+      expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+    });
+
+    it('leaves the overlay alone', async () => {
+      render(<SettingsTab />);
+      await screen.findByText('Spotify');
+      toMusic();
+      press(Keys.Enter);
+      await screen.findByText('Library');
+      expect(getSettings().showPrintOverlay).toBe(true);
+    });
   });
 });

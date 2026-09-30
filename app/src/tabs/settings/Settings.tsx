@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Keys } from '../../keys';
+import { fetchMusicSource, type MusicSource, setMusicSource } from '../../musicSource';
 import { DEFAULT_SETTINGS, getSettings, saveSettings } from '../../settings';
 
 /**
@@ -13,13 +14,16 @@ import { DEFAULT_SETTINGS, getSettings, saveSettings } from '../../settings';
  * So Up/Down move between rows, and OK acts on whichever row has focus. On the
  * address that means entering edit mode — where Left/Right pick an octet and
  * Up/Down change it — and OK again commits and steps back out. On the overlay
- * it simply toggles.
+ * it simply toggles, and on the music it asks the feed box to switch.
  *
  * The tab strip owns Left/Right at the shell level only while it is visible;
  * it hides after a few seconds, which is when this tab sees the arrows.
  */
 const HOST_ROW = 0;
 const OVERLAY_ROW = 1;
+const MUSIC_ROW = 2;
+
+const MUSIC_LABELS: Record<MusicSource, string> = { spotify: 'Spotify', library: 'Library' };
 
 export function SettingsTab() {
   const [octets, setOctets] = useState<number[]>(() =>
@@ -30,6 +34,30 @@ export function SettingsTab() {
   const [selected, setSelected] = useState(3);
   const [overlay, setOverlay] = useState(() => getSettings().showPrintOverlay);
   const [saved, setSaved] = useState<string | null>(null);
+  // null until the feed box answers, and whenever it can't be reached.
+  const [music, setMusic] = useState<MusicSource | null>(null);
+  const [musicBusy, setMusicBusy] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    fetchMusicSource().then((source) => {
+      if (!live) return;
+      setMusic(source);
+      setMusicBusy(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const toggleMusic = useCallback(() => {
+    if (musicBusy) return;
+    setMusicBusy(true);
+    setMusicSource(music === 'library' ? 'spotify' : 'library').then((source) => {
+      setMusic(source);
+      setMusicBusy(false);
+    });
+  }, [music, musicBusy]);
 
   const host = octets.join('.');
 
@@ -79,12 +107,14 @@ export function SettingsTab() {
           setRow((current) => Math.max(HOST_ROW, current - 1));
           break;
         case Keys.Down:
-          setRow((current) => Math.min(OVERLAY_ROW, current + 1));
+          setRow((current) => Math.min(MUSIC_ROW, current + 1));
           break;
         case Keys.Enter:
           if (row === HOST_ROW) {
             setEditing(true);
             setSaved(null);
+          } else if (row === MUSIC_ROW) {
+            toggleMusic();
           } else {
             const next = !overlay;
             setOverlay(next);
@@ -99,7 +129,7 @@ export function SettingsTab() {
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [bump, editing, octets, overlay, row]);
+  }, [bump, editing, octets, overlay, row, toggleMusic]);
 
   const rowClass = (which: number) => (row === which && !editing ? 'setting focused' : 'setting');
 
@@ -133,6 +163,15 @@ export function SettingsTab() {
           Print name, times and temperatures from OctoPrint, over the camera feed.
         </p>
         <p className="octet">{overlay ? 'On' : 'Off'}</p>
+      </div>
+
+      <div className={rowClass(MUSIC_ROW)}>
+        <h1>Music</h1>
+        <p className="hint">
+          What the camera feeds play: Spotify Connect, or random tracks from the CC music library on
+          Leia. Recordings get the same.
+        </p>
+        <p className="octet">{musicBusy ? '…' : music ? MUSIC_LABELS[music] : 'Unavailable'}</p>
       </div>
 
       <p className="hint">
