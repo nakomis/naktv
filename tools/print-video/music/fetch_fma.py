@@ -198,7 +198,11 @@ class Library:
         self.out, self.ffmpeg = out, ffmpeg
         out.mkdir(parents=True, exist_ok=True)
         self.manifest_path = out / "tracks.json"
-        self.manifest = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else []
+        try:
+            self.manifest = json.loads(self.manifest_path.read_text()) if self.manifest_path.exists() else []
+        except ValueError:
+            print("tracks.json is unreadable; run 'repair' to rebuild it from the tags", file=sys.stderr)
+            self.manifest = []
         self.have = {m["source_url"] for m in self.manifest}
         self.checked_path = out / "checked.jsonl"
         self.checked = set()
@@ -206,6 +210,14 @@ class Library:
             for line in self.checked_path.read_text().splitlines():
                 if line.strip():
                     self.checked.add(json.loads(line)["url"])
+
+    def save(self) -> None:
+        """Write tracks.json atomically: a new file, then a rename over the old
+        one. Rewriting it in place once left it empty when the crawl was
+        stopped mid-write; a rename is all or nothing."""
+        tmp = self.manifest_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(self.manifest, indent=1, ensure_ascii=False) + "\n")
+        tmp.replace(self.manifest_path)
 
     @property
     def hours(self) -> float:
@@ -262,7 +274,7 @@ class Library:
             return False
         self.manifest.append(meta)
         self.have.add(url)
-        self.manifest_path.write_text(json.dumps(self.manifest, indent=1, ensure_ascii=False) + "\n")
+        self.save()
         self.note(url, lic[0])
         return True
 
@@ -285,6 +297,46 @@ def cmd_albums(args, lib: Library, http: Polite) -> None:
         if lib.consider(http, t, args.cc0_only):
             print(f"  {lib.manifest[-1]['duration'] / 60:5.1f} min  {lib.manifest[-1]['file']}  "
                   f"({lib.manifest[-1]['licence']}; {lib.hours:.2f} h)", file=sys.stderr)
+
+
+def read_tags(path: Path) -> Optional[Dict]:
+    """A manifest entry rebuilt from a file's own tags, if they're complete."""
+    from mutagen.id3 import ID3, ID3NoHeaderError
+    from mutagen.mp3 import MP3
+
+    try:
+        t = ID3(path)
+    except (ID3NoHeaderError, Exception):
+        return None
+    def text(k):
+        return str(t[k].text[0]) if k in t and t[k].text else ""
+    def url(k):
+        return t[k].url if k in t else ""
+    lic, lic_url, src = text("TCOP"), url("WCOP"), url("WOAS")
+    if not (lic and lic_url and src):
+        return None
+    return {"artist": text("TPE1"), "title": text("TIT2"), "album": text("TALB"), "licence": lic,
+            "licence_url": lic_url, "source_url": src, "download_url": "",
+            "duration": round(float(MP3(path).info.length), 1)}
+
+
+def cmd_repair(args, lib: Library, http: Polite) -> None:
+    """Rebuild tracks.json from the files' tags, keeping any existing entries."""
+    known = {m["file"] for m in lib.manifest}
+    added = 0
+    for f in sorted(lib.out.rglob("*.mp3")):
+        rel = str(f.relative_to(lib.out))
+        if rel in known:
+            continue
+        meta = read_tags(f)
+        if meta is None:
+            print(f"  no complete tags, skipped: {rel}", file=sys.stderr)
+            continue
+        lib.manifest.append({"file": rel, **meta})
+        lib.have.add(meta["source_url"])
+        added += 1
+    lib.save()
+    print(f"added {added} entries from tags", file=sys.stderr)
 
 
 def cmd_crawl(args, lib: Library, http: Polite) -> None:
@@ -319,14 +371,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     c.add_argument("out", type=Path)
     c.add_argument("--genre", nargs="+", default=DEFAULT_GENRES)
     c.add_argument("--max-gb", type=float, default=500)
-    for p in (a, c):
+    r = sub.add_parser("repair", help="rebuild tracks.json from the files' tags")
+    r.add_argument("out", type=Path)
+    for p in (a, c, r):
         p.add_argument("--cc0-only", action="store_true", help="refuse CC BY as well")
         p.add_argument("--interval", type=float, default=1.0, help="seconds between requests")
         p.add_argument("--ffmpeg", default=shutil.which("ffmpeg"), help="default: ffmpeg on PATH, else mutagen")
     args = ap.parse_args(argv)
     lib = Library(args.out.expanduser(), args.ffmpeg)
     http = Polite(args.interval)
-    {"albums": cmd_albums, "crawl": cmd_crawl}[args.cmd](args, lib, http)
+    {"albums": cmd_albums, "crawl": cmd_crawl, "repair": cmd_repair}[args.cmd](args, lib, http)
     print(f"{len(lib.manifest)} tracks, {lib.hours:.2f} h in {lib.out}", file=sys.stderr)
     return 0
 
