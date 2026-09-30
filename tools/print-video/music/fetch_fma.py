@@ -225,6 +225,14 @@ class Library:
         url = listing["url"]
         if url in self.checked or url in self.have:
             return False
+        try:
+            return self._consider(http, url, cc0_only)
+        except urllib.error.HTTPError as e:
+            # FMA lists tracks whose page or file has gone: note it, move on.
+            self.note(url, f"http {e.code}")
+            return False
+
+    def _consider(self, http: Polite, url: str, cc0_only: bool) -> bool:
         page = http.text(url)
         lic = licence_of(page, cc0_only)
         if not lic:

@@ -42,6 +42,22 @@ class Licence(unittest.TestCase):
         self.assertEqual(f.licence_of(page(u, u + "/"))[0], "CC BY 4.0")
 
 
+class Gone(unittest.TestCase):
+    def test_a_missing_track_is_noted_and_skipped(self):
+        import tempfile, urllib.error
+        from pathlib import Path
+
+        class NotFound:
+            def text(self, url):
+                raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+        with tempfile.TemporaryDirectory() as d:
+            lib = f.Library(Path(d), None)
+            self.assertFalse(lib.consider(NotFound(), {"url": "https://x/gone/"}, False))
+            self.assertIn("https://x/gone/", lib.checked)
+            self.assertIn("http 404", (Path(d) / "checked.jsonl").read_text())
+
+
 class Pages(unittest.TestCase):
     def test_reads_genre_listing_entries(self):
         blob = ('{&quot;id&quot;:&quot;279067&quot;,&quot;handle&quot;:&quot;ok-today&quot;,'
