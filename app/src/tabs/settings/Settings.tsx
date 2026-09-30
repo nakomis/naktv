@@ -53,8 +53,10 @@ export function SettingsTab() {
   const toggleMusic = useCallback(() => {
     if (musicBusy) return;
     setMusicBusy(true);
+    // A failed switch keeps the last known source: the feed box still has it,
+    // and "Unavailable" after one dropped request would be misleading.
     setMusicSource(music === 'library' ? 'spotify' : 'library').then((source) => {
-      setMusic(source);
+      if (source) setMusic(source);
       setMusicBusy(false);
     });
   }, [music, musicBusy]);

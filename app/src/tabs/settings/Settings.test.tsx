@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { musicSourceUrl } from '../../config';
 import { Keys } from '../../keys';
@@ -170,6 +170,17 @@ describe('SettingsTab', () => {
         expect.objectContaining({ method: 'POST', body: JSON.stringify({ source: 'library' }) }),
       );
       press(Keys.Enter);
+      expect(await screen.findByText('Spotify')).toBeInTheDocument();
+    });
+
+    it('keeps the last known source when a switch fails', async () => {
+      const fetchMock = stubFeedBox('spotify');
+      render(<SettingsTab />);
+      await screen.findByText('Spotify');
+      fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      toMusic();
+      press(Keys.Enter);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
       expect(await screen.findByText('Spotify')).toBeInTheDocument();
     });
 

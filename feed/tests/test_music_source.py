@@ -64,6 +64,40 @@ class Source(unittest.TestCase):
             self.assertEqual(switch.read_source(os.path.join(d, "s")), "library")
 
 
+class Forward(unittest.TestCase):
+    """Writes into a nearly full pipe must never split a frame."""
+
+    def test_a_full_pipe_drops_whole_chunks_and_keeps_frames_aligned(self):
+        r, w = os.pipe()
+        os.set_blocking(w, False)
+        try:
+            # Fill the pipe, less a little room, with a recognisable pattern.
+            filler = b""
+            while True:
+                try:
+                    os.write(w, b"\x00" * 4096)
+                    filler += b"\x00" * 4096
+                except BlockingIOError:
+                    break
+            os.read(r, 4096 * 3)  # room for exactly three chunks
+            frames = b"".join(i.to_bytes(4, "little") for i in range(0, 50000))  # ~200 KB
+            written = switch.forward(w, frames)
+            self.assertEqual(written % switch.FRAME, 0)
+            self.assertEqual(written, 4096 * 3)
+            os.set_blocking(r, False)
+            got = b""
+            while True:
+                try:
+                    got += os.read(r, 1 << 20)
+                except BlockingIOError:
+                    break
+            tail = got[len(got) - written:]
+            self.assertEqual(tail, frames[:written])
+        finally:
+            os.close(r)
+            os.close(w)
+
+
 class Api(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
