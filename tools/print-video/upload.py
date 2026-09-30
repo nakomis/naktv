@@ -10,9 +10,13 @@
 The description is render.py's `<video>.description.txt`; the per-track credits
 are its `<video>.comment1.txt`, `comment2.txt` ... and go up with `comments`.
 
-Credentials live in the login Keychain, never in a file: the OAuth client
-(service `naktv-youtube`, account `client`) and the refresh token (account
-`refresh-token`). `auth` runs Google's installed-app flow with PKCE against a
+Credentials come from the login Keychain (service `naktv-youtube`, accounts
+`client` and `refresh-token`), or failing that from CRED_FILE, a 0600 JSON
+file {"client": {...}, "refresh_token": "..."}. The file is for driving
+uploads over ssh: macOS gives each ssh login its own security session, so the
+login Keychain reads as locked there even while the GUI session has it open.
+The master copies are in SSM, /naktv/youtube/oauth-client and
+/naktv/youtube/refresh-token (prod, eu-west-2). `auth` runs Google's installed-app flow with PKCE against a
 loopback redirect on --port; to sign in from another machine's browser, tunnel
 that port first (`ssh -L 8765:127.0.0.1:8765 phi`).
 
@@ -50,6 +54,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 KEYCHAIN_SERVICE = "naktv-youtube"
+CRED_FILE = Path(os.environ.get("NAKTV_YT_CREDENTIALS", "~/.config/naktv/youtube.json")).expanduser()
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     # Thumbnails, playlists and comments. force-ssl is the `youtube` scope's
@@ -91,8 +96,27 @@ def keychain_set(account: str, value: str) -> None:
         raise SystemExit(f"Couldn't store {account} in the Keychain (security exit {proc.returncode}).{hint}")
 
 
+def cred_file() -> Dict:
+    if not CRED_FILE.exists():
+        return {}
+    if CRED_FILE.stat().st_mode & 0o077:
+        raise SystemExit(f"{CRED_FILE} is readable by others: chmod 600 it.")
+    return json.loads(CRED_FILE.read_text())
+
+
+def credential(account: str) -> Optional[str]:
+    """The Keychain first, then the credentials file."""
+    value = keychain_get(account)
+    if value:
+        return value
+    data = cred_file()
+    if account == "client" and "client" in data:
+        return json.dumps(data["client"])
+    return data.get("refresh_token") if account == "refresh-token" else None
+
+
 def load_client() -> Dict:
-    raw = keychain_get("client")
+    raw = credential("client")
     if not raw:
         raise SystemExit("No OAuth client in the Keychain: run `upload.py import-client FILE` first.")
     return json.loads(raw)["installed"]
@@ -169,7 +193,7 @@ def auth(port: int, open_browser: bool) -> None:
 
 def access_token() -> str:
     client = load_client()
-    refresh = keychain_get("refresh-token")
+    refresh = credential("refresh-token")
     if not refresh:
         raise SystemExit("Not signed in: run `upload.py auth` first.")
     try:
