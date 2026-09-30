@@ -31,6 +31,40 @@ const MAX_QUEUED_SEGMENTS = 120;
 /** Seconds of already-played buffer to keep before evicting. */
 const BUFFER_KEEP_SECONDS = 20;
 
+/**
+ * How much played buffer to keep when the TV refuses an append for lack of
+ * room (QuotaExceededError): just enough that the playhead is not left at the
+ * very edge of what remains.
+ */
+const QUOTA_KEEP_SECONDS = 1;
+
+/** How many recent events `mseLog` keeps. */
+const LOG_LIMIT = 50;
+
+export interface MseLogEntry {
+  at: string;
+  event: string;
+}
+
+/**
+ * Recent failures and recoveries, newest last (NAKTV-27).
+ *
+ * Every failure used to go to onError and nowhere else, so when the sound died
+ * there was no record of why. Also reachable as `window.__naktvMseLog`, for
+ * reading over ares-inspect without a rebuild.
+ */
+export const mseLog: MseLogEntry[] = [];
+
+function log(event: string): void {
+  mseLog.push({ at: new Date().toISOString(), event });
+  if (mseLog.length > LOG_LIMIT) mseLog.shift();
+  console.warn(`[naktv/mse] ${event}`);
+}
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { __naktvMseLog: MseLogEntry[] }).__naktvMseLog = mseLog;
+}
+
 /** How often to check that playback is still progressing. */
 const STALL_CHECK_MS = 2000;
 
@@ -86,6 +120,7 @@ export function connectMse(
   const fail = (reason: string) => {
     if (closed) return;
     stopWatchdog();
+    log(`failed: ${reason}`);
     handlers.onError?.(reason);
   };
 
@@ -130,6 +165,11 @@ export function connectMse(
     lastSegmentAt = Date.now();
     stallTimer = setInterval(() => {
       if (closed) return;
+      // On the timer as well as between appends: segments arrive back to
+      // back, so the queue can go minutes without being empty at an
+      // updateend, and the buffer grew unchecked until the TV refused an
+      // append (NAKTV-27).
+      evict();
       if (skipGapIfStranded()) return;
       if (Date.now() - lastSegmentAt >= STALL_LIMIT_MS) fail('stalled');
     }, STALL_CHECK_MS);
@@ -145,21 +185,30 @@ export function connectMse(
   objectUrl = URL.createObjectURL(mediaSource);
   video.src = objectUrl;
 
-  /** Drop buffered data we have already played, so memory doesn't creep up. */
-  const evict = () => {
-    if (!sourceBuffer || sourceBuffer.updating) return;
+  /**
+   * Drop buffered data older than `keepSeconds` behind the playhead, so memory
+   * doesn't creep up. Returns whether a removal was started.
+   */
+  const evict = (keepSeconds: number = BUFFER_KEEP_SECONDS): boolean => {
+    if (!sourceBuffer || sourceBuffer.updating) return false;
     const buffered = sourceBuffer.buffered;
-    if (!buffered.length) return;
+    if (!buffered.length) return false;
     const start = buffered.start(0);
-    const cutoff = video.currentTime - BUFFER_KEEP_SECONDS;
-    if (cutoff > start) {
-      try {
-        sourceBuffer.remove(start, cutoff);
-      } catch {
-        // Removal is best-effort; a failure here is not worth dropping the feed.
-      }
+    const cutoff = video.currentTime - keepSeconds;
+    if (cutoff <= start) return false;
+    try {
+      sourceBuffer.remove(start, cutoff);
+      return true;
+    } catch (error) {
+      // Not worth dropping the feed over, but no longer silent: a removal
+      // that keeps failing is how the buffer fills.
+      log(`remove failed: ${(error as Error).name}`);
+      return false;
     }
   };
+
+  /** Set while an append refused for lack of room waits to be retried. */
+  let retryingAfterQuota = false;
 
   const flush = () => {
     if (closed || !sourceBuffer || sourceBuffer.updating) return;
@@ -170,8 +219,23 @@ export function connectMse(
     }
     try {
       sourceBuffer.appendBuffer(next);
+      if (retryingAfterQuota) log('recovered: append succeeded after trimming');
+      retryingAfterQuota = false;
     } catch (error) {
-      fail(`appendBuffer: ${(error as Error).name}`);
+      const name = (error as Error).name;
+      // The TV's buffer is full. Trim hard and retry the same segment once the
+      // removal completes (its updateend calls flush again). Dropping it would
+      // punch a hole the playhead can't cross. Fail only if trimming frees
+      // nothing, or if the retry is refused too.
+      if (name === 'QuotaExceededError' && !retryingAfterQuota) {
+        queue.unshift(next);
+        retryingAfterQuota = true;
+        if (evict(QUOTA_KEEP_SECONDS)) {
+          log('buffer full: trimmed to retry the append');
+          return;
+        }
+      }
+      fail(`appendBuffer: ${name}`);
     }
   };
 

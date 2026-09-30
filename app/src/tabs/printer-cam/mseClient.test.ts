@@ -1,4 +1,4 @@
-import { connectMse } from './mseClient';
+import { connectMse, mseLog } from './mseClient';
 
 /**
  * The fakes are driven by hand rather than on a timer: every test wants to say
@@ -9,11 +9,19 @@ class FakeSourceBuffer extends EventTarget {
   updating = false;
   appended: ArrayBuffer[] = [];
   removed: Array<[number, number]> = [];
+  /** How many upcoming appends to refuse as the TV does when its buffer is full. */
+  quotaFailures = 0;
+  removeThrows = false;
   buffered = { length: 1, start: () => 0, end: () => 100 } as unknown as TimeRanges;
   appendBuffer(data: ArrayBuffer) {
+    if (this.quotaFailures > 0) {
+      this.quotaFailures -= 1;
+      throw new DOMException('full', 'QuotaExceededError');
+    }
     this.appended.push(data);
   }
   remove(start: number, end: number) {
+    if (this.removeThrows) throw new DOMException('bad state', 'InvalidStateError');
     this.removed.push([start, end]);
   }
 }
@@ -284,5 +292,97 @@ describe('connectMse', () => {
     connectMse(makeVideo(), 'ws://phi:1984/api/ws?src=printer_av', { onError });
     await Promise.resolve();
     expect(onError).toHaveBeenCalledWith('MediaSource unavailable');
+  });
+
+  describe('buffer management (NAKTV-27)', () => {
+    function segment() {
+      FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: new ArrayBuffer(4) }));
+    }
+
+    beforeEach(() => {
+      mseLog.length = 0;
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    // Segments arrive back to back, so the queue can go minutes without being
+    // empty at an updateend. On the TV that let the buffer reach 74 s.
+    it('trims on a timer even when the queue never empties', () => {
+      vi.useFakeTimers();
+      try {
+        openStream(makeVideo(90));
+        reply();
+        const buffer = FakeMediaSource.last?.buffers[0];
+        segment();
+        expect(buffer?.removed).toEqual([]);
+
+        vi.advanceTimersByTime(2000);
+        expect(buffer?.removed).toEqual([[0, 70]]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('trims hard and retries the same segment when the buffer is full', () => {
+      const { onError } = openStream(makeVideo(90));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.quotaFailures = 1;
+
+      const refused = new ArrayBuffer(8);
+      FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: refused }));
+      // Trimmed to a second behind the playhead, and nothing appended yet.
+      expect(buffer.removed).toEqual([[0, 89]]);
+      expect(buffer.appended).toEqual([]);
+
+      // The removal finishing is what retries it: same segment, not dropped.
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(buffer.appended).toEqual([refused]);
+      expect(onError).not.toHaveBeenCalled();
+      expect(mseLog.map((e) => e.event)).toEqual([
+        'buffer full: trimmed to retry the append',
+        'recovered: append succeeded after trimming',
+      ]);
+    });
+
+    it('gives up if the retry is refused as well', () => {
+      const { onError } = openStream(makeVideo(90));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.quotaFailures = 2;
+
+      segment();
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(onError).toHaveBeenCalledWith('appendBuffer: QuotaExceededError');
+    });
+
+    it('gives up at once if there is nothing played to trim', () => {
+      // Playhead at the very start: everything buffered is still ahead of it.
+      const { onError } = openStream(makeVideo(0.5));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (buffer) buffer.quotaFailures = 1;
+      segment();
+      expect(onError).toHaveBeenCalledWith('appendBuffer: QuotaExceededError');
+    });
+
+    it('records every failure with its reason', () => {
+      const { onError } = openStream();
+      FakeSocket.last?.onclose?.(new Event('close'));
+      expect(onError).toHaveBeenCalled();
+      expect(mseLog[mseLog.length - 1]?.event).toBe('failed: websocket closed');
+      expect(console.warn).toHaveBeenCalledWith('[naktv/mse] failed: websocket closed');
+    });
+
+    it('records a removal that fails instead of swallowing it', () => {
+      openStream(makeVideo(90));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.removeThrows = true;
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(mseLog[mseLog.length - 1]?.event).toBe('remove failed: InvalidStateError');
+    });
   });
 });
