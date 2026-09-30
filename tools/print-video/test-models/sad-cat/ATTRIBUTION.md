@@ -22,10 +22,26 @@ modifiers with their settings exposed, so they can be tuned and re-exported:
 - **`SadCat_Hair`** / **`SadCat_HairPrint`**: a hair (Curves) object growing
   ~59k tapered strands from the body, turned into tubes and joined to it.
 
-The exports (`sad-cat-displaced.obj`, 225 MB; `sad-cat-hair.obj`, 145 MB) are
-too big for GitHub, so they're gitignored and backed up on Leia at
+There's also a half-size set (`SadCat_50_*`, ~5 cm tall, placed 90 mm along Y
+so the two sets don't overlap) to cut print time. The fur there keeps the same
+absolute size, not scaled with the cat: what matters is the fur against the
+layer panel's grid and blur, so it's relatively twice as coarse.
+
+| Export | Height | Faces | Size |
+|---|---|---|---|
+| `sad-cat-displaced.obj` | 100 mm | 3.5M | 225 MB |
+| `sad-cat-hair.obj` | 103 mm | 2.1M | 145 MB |
+| `sad-cat-50-displaced.obj` | 50 mm | 870k | 53 MB |
+| `sad-cat-50-hair.obj` | 53 mm | 676k | 43 MB |
+
+They're too big for GitHub, so they're gitignored and backed up on Leia at
 `share/naktv/test-models/sad-cat/`. To rebuild one, show the object and use
-File → Export → Wavefront (.obj) with *Apply Modifiers* and *Render* evaluation.
+File → Export → Wavefront (.obj) with *Apply Modifiers* and *Render*
+evaluation. Move a whole set (body, hair and print objects) together: the
+hair is positioned relative to its body, so moving one alone detaches it.
+
+The hair versions reach 2.5 mm below the base (hair under the paws and tail),
+so cut at z = 0 before printing flat.
 
 Fur grows on the eyes, bell and collar too, and the hair tips (0.1 mm) won't
 survive washing. Neither matters here: the point is detail for the blur to eat.

@@ -41,7 +41,6 @@ lcov.info
 # Python
 __pycache__/
 
-# Furry Sad cat exports: over GitHub's 100 MB limit. Rebuilt from
+# Furry Sad cat exports: 43-225 MB each, too big for GitHub. Rebuilt from
 # sad-cat-fur.blend; backed up on Leia at share/naktv/test-models/sad-cat/.
-tools/print-video/test-models/sad-cat/sad-cat-displaced.obj
-tools/print-video/test-models/sad-cat/sad-cat-hair.obj
+tools/print-video/test-models/sad-cat/sad-cat-*.obj
