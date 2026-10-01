@@ -67,6 +67,25 @@ class Pages(unittest.TestCase):
         self.assertEqual(len(tracks), 1)  # the same track twice counts once
         self.assertEqual(tracks[0]["url"], "https://freemusicarchive.org/music/a/b/ok-today/")
 
+    def test_search_results_are_walked_page_by_page(self):
+        blob = ('{&quot;url&quot;:&quot;https:\\/\\/freemusicarchive.org\\/music\\/a\\/b\\/tN\\/&quot;,'
+                '&quot;title&quot;:&quot;TN&quot;}')
+
+        class Search:
+            def __init__(self):
+                self.urls = []
+
+            def text(self, url):
+                self.urls.append(url)
+                n = len(self.urls)
+                return f'<div data-track-info="{blob.replace("N", str(n))}"></div>' if n <= 2 else "<html></html>"
+
+        http = Search()
+        tracks = list(f.search_tracks(http, "deep trance"))
+        self.assertEqual([t["title"] for t in tracks], ["T1", "T2"])
+        self.assertEqual(http.urls[0], "https://freemusicarchive.org/search/?quicksearch=deep+trance&page=1")
+        self.assertTrue(http.urls[2].endswith("&page=3"))
+
     def test_titles_are_cleaned(self):
         self.assertEqual(f.clean_title("Break From Reality ( LoFi , Peaceful ).mp3"), "Break From Reality")
         self.assertEqual(f.clean_title("20 Minute Meditation 7"), "20 Minute Meditation 7")
