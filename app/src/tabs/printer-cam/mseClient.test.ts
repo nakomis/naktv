@@ -384,5 +384,33 @@ describe('connectMse', () => {
       buffer.dispatchEvent(new Event('updateend'));
       expect(mseLog[mseLog.length - 1]?.event).toBe('remove failed: InvalidStateError');
     });
+
+    it('reports a failure once, however many segments follow it', () => {
+      const { onError } = openStream();
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (buffer) buffer.updating = true;
+      for (let i = 0; i < 200; i += 1) segment();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(mseLog.filter((e) => e.event.startsWith('failed'))).toHaveLength(1);
+    });
+
+    it('appends everything queued during an append in one go', () => {
+      openStream();
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.updating = true;
+      const parts = [new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5, 6])];
+      for (const part of parts) {
+        FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: part.buffer }));
+      }
+      expect(buffer.appended).toHaveLength(0);
+
+      buffer.updating = false;
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(buffer.appended).toHaveLength(1);
+      expect([...new Uint8Array(buffer.appended[0])]).toEqual([1, 2, 3, 4, 5, 6]);
+    });
   });
 });

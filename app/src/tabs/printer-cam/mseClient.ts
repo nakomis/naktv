@@ -17,6 +17,28 @@
 const CODECS = 'avc1.640029,avc1.42E01E,mp4a.40.2';
 
 /**
+ * Concatenates queued segments, so one append carries everything that arrived
+ * while the last one was in progress (NAKTV-27).
+ *
+ * Appending them one at a time made the TV's per-append overhead - each one a
+ * round trip through "updating" and updateend - the bottleneck: segments
+ * arrived faster than that, the queue grew until it overflowed, and the feed
+ * fell back. go2rtc's own player batches its appends for the same reason.
+ */
+function concatSegments(segments: ArrayBuffer[]): ArrayBuffer {
+  if (segments.length === 1) return segments[0];
+  let total = 0;
+  for (const segment of segments) total += segment.byteLength;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const segment of segments) {
+    out.set(new Uint8Array(segment), offset);
+    offset += segment.byteLength;
+  }
+  return out.buffer;
+}
+
+/**
  * A queue this deep means we are not keeping up at all.
  *
  * Segments are never dropped to trim it: dropping one that has not been
@@ -108,6 +130,8 @@ export function connectMse(
   let sourceBuffer: SourceBuffer | undefined;
   let objectUrl: string | undefined;
   let closed = false;
+  /** Set by the first failure: everything after it on this connection is ignored. */
+  let failed = false;
   let stallTimer: ReturnType<typeof setInterval> | undefined;
 
   const queue: ArrayBuffer[] = [];
@@ -117,8 +141,15 @@ export function connectMse(
     stallTimer = undefined;
   };
 
+  /**
+   * Reports a failure, once. Segments keep arriving until the caller tears the
+   * connection down, and each one used to fail again: 50 onError calls in a
+   * second used up useVideoFeed's quick retries at once and left the silent
+   * MJPEG fallback up for two minutes (NAKTV-27).
+   */
   const fail = (reason: string) => {
-    if (closed) return;
+    if (closed || failed) return;
+    failed = true;
     stopWatchdog();
     log(`failed: ${reason}`);
     handlers.onError?.(reason);
@@ -211,12 +242,12 @@ export function connectMse(
   let retryingAfterQuota = false;
 
   const flush = () => {
-    if (closed || !sourceBuffer || sourceBuffer.updating) return;
-    const next = queue.shift();
-    if (!next) {
+    if (closed || failed || !sourceBuffer || sourceBuffer.updating) return;
+    if (!queue.length) {
       evict();
       return;
     }
+    const next = concatSegments(queue.splice(0));
     try {
       sourceBuffer.appendBuffer(next);
       if (retryingAfterQuota) log('recovered: append succeeded after trimming');
@@ -254,7 +285,7 @@ export function connectMse(
     socket.onclose = () => fail('websocket closed');
 
     socket.onmessage = (event: MessageEvent) => {
-      if (closed) return;
+      if (closed || failed) return;
 
       if (typeof event.data === 'string') {
         const message = JSON.parse(event.data) as { type: string; value: string };
