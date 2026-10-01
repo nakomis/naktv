@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CONFIG } from '../config';
 import { isBack, Keys } from '../keys';
 import { TABS, type TabDefinition } from '../tabs/registry';
+import { loadLastTab, saveLastTab } from './lastTab';
 import { TabStrip } from './TabStrip';
 import { useAutoHide } from './useAutoHide';
 
@@ -18,7 +19,13 @@ interface AppProps {
  * Down dismisses it. Back always exits.
  */
 export function App({ tabs = TABS, onExit = () => window.close() }: AppProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Opens on the tab last shown, or the first if that one no longer exists.
+  const [activeIndex, setActiveIndex] = useState(() =>
+    Math.max(
+      0,
+      tabs.findIndex((tab) => tab.id === loadLastTab()),
+    ),
+  );
   const strip = useAutoHide(CONFIG.stripHideDelayMs);
 
   const select = useCallback(
@@ -72,6 +79,10 @@ export function App({ tabs = TABS, onExit = () => window.close() }: AppProps) {
   }, [strip.reveal]);
 
   const active = tabs[activeIndex];
+
+  useEffect(() => {
+    if (active) saveLastTab(active.id);
+  }, [active]);
   return (
     <div className="shell">
       <TabStrip tabs={tabs} activeIndex={activeIndex} visible={strip.visible} onSelect={select} />

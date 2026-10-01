@@ -13,13 +13,39 @@ function press(keyCode: number) {
   fireEvent.keyDown(document, { keyCode });
 }
 
+/**
+ * An in-memory localStorage. Under Node 25 the global one has no methods
+ * without --localstorage-file, and it would leak between tests anyway.
+ */
+function memoryStorage(): Storage {
+  const items = new Map<string, string>();
+  return {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => void items.set(key, String(value)),
+    removeItem: (key: string) => void items.delete(key),
+    clear: () => items.clear(),
+    key: (i: number) => [...items.keys()][i] ?? null,
+    get length() {
+      return items.size;
+    },
+  };
+}
+
+const realStorage = Object.getOwnPropertyDescriptor(window, 'localStorage');
+
 function strip() {
   return document.querySelector('.tab-strip') as HTMLElement;
 }
 
 describe('App', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, 'localStorage', { configurable: true, value: memoryStorage() });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    if (realStorage) Object.defineProperty(window, 'localStorage', realStorage);
+  });
 
   it('shows the first tab and a visible strip on launch', () => {
     render(<App tabs={tabs} />);
@@ -97,5 +123,35 @@ describe('App', () => {
   it('uses the real tab registry by default', () => {
     render(<App />);
     expect(screen.getByRole('tab', { name: 'Printer Cam' })).toBeInTheDocument();
+  });
+
+  describe('remembering the tab (NAKTV-28)', () => {
+    it('opens on the tab it last showed', () => {
+      const { unmount } = render(<App tabs={tabs} />);
+      press(Keys.Right);
+      unmount();
+
+      render(<App tabs={tabs} />);
+      expect(screen.getByRole('tab', { name: 'Two' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText('second panel')).toBeInTheDocument();
+    });
+
+    it('opens on the first tab if the remembered one no longer exists', () => {
+      window.localStorage.setItem('naktv.lastTab', 'retired-tab');
+      render(<App tabs={tabs} />);
+      expect(screen.getByRole('tab', { name: 'One' })).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('still works when storage throws, as it can on webOS', () => {
+      Object.defineProperty(window, 'localStorage', {
+        configurable: true,
+        get: () => {
+          throw new Error('SecurityError');
+        },
+      });
+      render(<App tabs={tabs} />);
+      press(Keys.Right);
+      expect(screen.getByText('second panel')).toBeInTheDocument();
+    });
   });
 });
