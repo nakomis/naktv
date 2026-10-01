@@ -47,6 +47,17 @@ class Rebuild(unittest.TestCase):
         self.assertEqual(n, len(faces))
         self.assertEqual(len(data), 84 + 50 * n)
 
+    def test_triangles_face_outwards(self):
+        # Inside-out triangles slice to nothing: Chitubox showed an empty plate.
+        # Outward-facing triangles give the mesh a positive signed volume.
+        vol, origin = rebuild.to_volume(self.block_layers())
+        verts, faces = rebuild.surface(vol, (0.01, 1.0, 1.0))
+        xyz = rebuild.to_model_coords(verts, origin, 1.0)
+        faces = rebuild.face_outwards(xyz, faces)
+        tri = xyz[faces].astype(np.float64)
+        volume = np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() / 6
+        self.assertGreater(volume, 0)
+
     def test_empty_layers_are_refused(self):
         with self.assertRaises(SystemExit):
             rebuild.to_volume([np.zeros((4, 4), np.uint8)] * 3)

@@ -220,6 +220,18 @@ def to_model_coords(verts: np.ndarray, origin: Tuple[int, int], mm_px: float) ->
     return np.column_stack([x, y, z]).astype(np.float32)
 
 
+def face_outwards(xyz: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    """Wind every triangle so it faces out of the solid.
+
+    Marching cubes winds them inwards for this volume, and a slicer treats an
+    inside-out mesh as empty: Chitubox sliced the first rebuild to nothing.
+    Outward triangles give a positive signed volume, so flip them all if it
+    comes out negative."""
+    tri = xyz[faces].astype(np.float64)
+    volume = np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() / 6
+    return faces[:, [0, 2, 1]] if volume < 0 else faces
+
+
 def simplify(xyz: np.ndarray, faces: np.ndarray, target: int) -> Tuple[np.ndarray, np.ndarray]:
     """Merge the many tiny triangles into fewer, larger ones, keeping the shape.
 
@@ -304,6 +316,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"preview -> {args.preview}", file=sys.stderr)
     verts, faces = surface(vol, (layer_h * args.z_step, mm_px, mm_px))
     xyz = to_model_coords(verts, origin, mm_px)
+    faces = face_outwards(xyz, faces)
     before = len(faces)
     xyz, faces = simplify(xyz, faces, args.triangles)
     if len(faces) < before:
