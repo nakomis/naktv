@@ -133,7 +133,7 @@ echo "==> naktv-feed ${VERSION}"
 TAR="$WORK/naktv-feed-${VERSION}.tar.gz"
 tar -czf "$TAR" -C "$HERE" \
     --exclude='*.pyc' --exclude='__pycache__' \
-    feed/bin feed/go2rtc.yaml.j2 feed/README.md
+    feed/bin feed/README.md
 publish "$TAR" "naktv-feed/${VERSION}/naktv-feed-${VERSION}.tar.gz"
 
 echo
