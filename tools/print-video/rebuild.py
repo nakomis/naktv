@@ -282,6 +282,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="tv: simulate the panel drawn at this fraction of its size, then stretched back (e.g. 0.75)")
     ap.add_argument("--blur", type=float, default=0.0,
                     help="tv: simulate CSS blur(Npx) on the panel (Gaussian, N display px)")
+    ap.add_argument("--panel", action="store_true",
+                    help="tv: simulate the panel even at full resolution with no blur (the TV's own detail)")
     ap.add_argument("--display-width", type=int, default=422,
                     help="tv simulation: the panel's width on screen in px (default 422, the TV's 22vw)")
     ap.add_argument("--hwaccel", action="store_true",
@@ -298,7 +300,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.source == "tv":
         sim = None
-        if args.resolution < 1 or args.blur > 0:
+        # Without --panel, full resolution and no blur means the saved images
+        # as they are (852 px across), twice the detail the TV's panel shows.
+        if args.panel or args.resolution < 1 or args.blur > 0:
             sim = (args.display_width, args.resolution, args.blur)
             print(f"simulating the TV panel at {args.display_width} px, {args.resolution:.0%} resolution, "
                   f"blur {args.blur} px", file=sys.stderr)
