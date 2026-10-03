@@ -24,6 +24,7 @@ If you find this useful, please consider buying me a coffee:
 - [Setting up the TV](#setting-up-the-tv)
 - [Building and installing](#building-and-installing)
 - [Android TV](#android-tv)
+- [iOS and macOS](#ios-and-macos)
 - [Testing](#testing)
 - [CI and releases](#ci-and-releases)
 - [Architecture Diagrams](#architecture-diagrams)
@@ -64,10 +65,12 @@ app/                 The webOS app: Vite + React + TypeScript, plain CSS
   src/webos/         webOS platform glue (screen-saver veto)
   webos/             appinfo.json and launcher icons, copied into dist/
 android/             A thin Kotlin WebView shell hosting the same app on Android TV
+apple/               A thin Swift WKWebView shell hosting it on iOS, iPadOS and macOS
 infra/               CDK: GithubCiStack, the OIDC role CI assumes
 feed/                go2rtc, ffmpeg and librespot: the muxed camera + Spotify stream
 scripts/install-tv.sh       Build, sideload and relaunch on the LG
 scripts/install-android.sh  Build, sideload and relaunch on Android TV
+scripts/install-apple.sh    Build and install on a Mac, an iPhone/iPad or the Simulator
 docs/                Logo, candidates and architecture diagrams
 ```
 
@@ -179,6 +182,55 @@ The Gradle build wants a JDK the Android Gradle Plugin accepts —
 `android/.tool-versions` pins one via asdf. Point `local.properties`
 (git-ignored, one line: `sdk.dir=...`) at the Android SDK if it isn't at the
 default macOS location.
+
+## iOS and macOS
+
+The same web app runs on iPhone, iPad and the Mac, inside a small Swift
+WKWebView shell in `apple/`. The Xcode project is generated from
+`apple/project.yml` by [XcodeGen](https://github.com/yonaskolb/XcodeGen)
+(`brew install xcodegen`); the generated `NakTV.xcodeproj` is git-ignored.
+
+```sh
+scripts/install-apple.sh mac                   # build, copy to /Applications, launch
+scripts/install-apple.sh ios                   # the one connected iPhone/iPad
+scripts/install-apple.sh ios "Martin's iPad"   # a named device, or its UDID
+scripts/install-apple.sh sim                   # iOS Simulator (iPhone 17 Pro)
+```
+
+Like the Android build, this builds the web app, copies `app/dist` into
+`apple/www/` (git-ignored), then runs `xcodegen` and `xcodebuild`. The full
+build log goes to `/tmp/naktv-apple-build.log`.
+
+These builds are installed directly, never through the App Store — they rely
+on WebKit preferences Apple doesn't publish (see below), which App Review
+would refuse.
+
+- **Signing.** `apple/Config/NakTV.xcconfig` sets team `62YFUFBSFX`. The Mac
+  app is signed with the Developer ID certificate. Built here it runs here;
+  to copy it to another Mac, notarise it first —
+  `NAKTV_NOTARY_PROFILE=<profile> scripts/install-apple.sh mac`, after
+  storing credentials once with `xcrun notarytool store-credentials`. The iOS app uses automatic signing: Xcode must be signed in to the
+  team's Apple ID, and `-allowProvisioningUpdates` lets it make the
+  development certificate and profile, and register the device, first time
+  round. Override either in `apple/Config/Local.xcconfig` (git-ignored).
+- **iOS 17.1 or later on an iPhone.** iPhone WebKit has no classic
+  `MediaSource`, so the player uses `ManagedMediaSource` there (iPad and Mac
+  have both, and use the classic one). Before 17.1 an iPhone gets the MJPEG
+  fallback.
+- **No sound.** The feeds carry the TV's soundtrack; the Apple builds keep
+  the player muted (a user script pins `muted` to true), so they show the
+  picture only and leave whatever else is playing alone.
+- **Back.** Escape on a keyboard is Back, as on the TVs. On a Mac it leaves
+  full screen first, then closes the window (which quits); an iOS app doesn't
+  quit itself, so on iOS it does nothing. Tap anywhere to bring the tab strip
+  back, then tap a tab.
+- **Debugging.** The page's console goes to the unified log, subsystem
+  `com.nakomis.naktv`:
+  `log stream --level info --predicate 'subsystem == "com.nakomis.naktv"'`.
+  `NAKTV_PROBE=1 scripts/install-apple.sh …` also logs the player's state
+  every five seconds; on a device, read it with
+  `idevicesyslog -u <udid> -p NakTV` (`brew install libimobiledevice`). The
+  web view is inspectable from Safari's Develop menu.
 
 ## Testing
 

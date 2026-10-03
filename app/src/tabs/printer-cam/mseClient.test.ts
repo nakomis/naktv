@@ -294,6 +294,43 @@ describe('connectMse', () => {
     expect(onError).toHaveBeenCalledWith('MediaSource unavailable');
   });
 
+  describe('ManagedMediaSource (NAKTV-31)', () => {
+    beforeEach(() => {
+      // An iPhone: no classic MediaSource, only the managed one.
+      vi.stubGlobal('MediaSource', undefined);
+      vi.stubGlobal('ManagedMediaSource', FakeMediaSource);
+    });
+
+    it('plays through ManagedMediaSource where there is no MediaSource', () => {
+      const { onError, onPlaying } = openStream();
+      reply();
+      expect(FakeSocket.last?.url).toBe('ws://phi:1984/api/ws?src=printer_av');
+      expect(onPlaying).toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('opts the element out of remote playback, or the source never opens', () => {
+      const video = makeVideo();
+      connectMse(video, 'ws://phi:1984/api/ws?src=printer_av');
+      expect((video as { disableRemotePlayback?: boolean }).disableRemotePlayback).toBe(true);
+    });
+
+    it('logs the system asking it to stop streaming', () => {
+      openStream();
+      FakeMediaSource.last?.dispatchEvent(new Event('endstreaming'));
+      expect(mseLog[mseLog.length - 1]?.event).toBe('managed: endstreaming');
+    });
+
+    it('prefers the classic MediaSource where both exist', () => {
+      class OtherSource extends FakeMediaSource {}
+      vi.stubGlobal('MediaSource', OtherSource);
+      const video = makeVideo();
+      connectMse(video, 'ws://phi:1984/api/ws?src=printer_av');
+      expect(FakeMediaSource.last).toBeInstanceOf(OtherSource);
+      expect((video as { disableRemotePlayback?: boolean }).disableRemotePlayback).toBeFalsy();
+    });
+  });
+
   describe('buffer management (NAKTV-27)', () => {
     function segment() {
       FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: new ArrayBuffer(4) }));
