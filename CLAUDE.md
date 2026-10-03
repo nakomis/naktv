@@ -78,6 +78,10 @@ xcodegen from `apple/project.yml`; don't commit `NakTV.xcodeproj`.
   `com.nakomis.naktv`), and the `-NakTVProbe` launch argument logs the
   player's state every five seconds — `NAKTV_PROBE=1 scripts/install-apple.sh
   mac|sim|ios`. That's the way to check a build without a person watching.
+  On a real device, read it with `idevicesyslog -u <udid> -p NakTV`
+  (`brew install libimobiledevice`); add `-NakTVTab Elegoo` to open on the
+  tab with live video. Never run more than one iOS Simulator on mu: two
+  playing video hung its Intel GPU and forced a restart.
 - **Xcode 26.5 needs its iOS 26.5 platform** before anything iOS will build
   (`xcodebuild -downloadPlatform iOS`, ~10 GB).
 

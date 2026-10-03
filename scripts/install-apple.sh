@@ -113,6 +113,23 @@ sys.exit(f"install-apple: no available simulator named {name!r}")
     ;;
 
   ios)
+    # A device that has never trusted this Mac is listed but unpaired, and
+    # can't be installed to. Asking to pair puts "Trust This Computer?" on it.
+    PAIRING_JSON=$(mktemp)
+    xcrun devicectl list devices --json-output "$PAIRING_JSON" >/dev/null
+    python3 -c '
+import json, sys
+for d in json.load(open(sys.argv[1]))["result"]["devices"]:
+    if d.get("hardwareProperties", {}).get("platform") == "iOS" \
+            and d.get("connectionProperties", {}).get("pairingState") == "unpaired" \
+            and d.get("connectionProperties", {}).get("transportType") == "wired":
+        print(d["identifier"])
+' "$PAIRING_JSON" | while read -r unpaired; do
+      echo "install-apple: pairing $unpaired — tap Trust on the device and enter its passcode"
+      xcrun devicectl manage pair --device "$unpaired" >/dev/null
+    done
+    rm -f "$PAIRING_JSON"
+
     # devicectl knows the device by name or UDID; xcodebuild wants the UDID.
     DEVICES_JSON=$(mktemp)
     xcrun devicectl list devices --json-output "$DEVICES_JSON" >/dev/null

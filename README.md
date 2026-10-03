@@ -226,7 +226,9 @@ would refuse.
   `com.nakomis.naktv`:
   `log stream --level info --predicate 'subsystem == "com.nakomis.naktv"'`.
   `NAKTV_PROBE=1 scripts/install-apple.sh …` also logs the player's state
-  every five seconds. The web view is inspectable from Safari's Develop menu.
+  every five seconds; on a device, read it with
+  `idevicesyslog -u <udid> -p NakTV` (`brew install libimobiledevice`). The
+  web view is inspectable from Safari's Develop menu.
 
 ## Testing
 
