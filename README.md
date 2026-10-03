@@ -194,7 +194,7 @@ WKWebView shell in `apple/`. The Xcode project is generated from
 scripts/install-apple.sh mac                   # build, copy to /Applications, launch
 scripts/install-apple.sh ios                   # the one paired iPhone/iPad
 scripts/install-apple.sh ios "Martin's iPad"   # a named device, or its UDID
-scripts/install-apple.sh sim                   # iOS Simulator (iPhone 16 Pro)
+scripts/install-apple.sh sim                   # iOS Simulator (iPhone 17 Pro)
 ```
 
 Like the Android build, this builds the web app, copies `app/dist` into

@@ -4,8 +4,8 @@
 #   scripts/install-apple.sh mac               # build, copy to /Applications, launch
 #   scripts/install-apple.sh ios               # the one connected iPhone/iPad
 #   scripts/install-apple.sh ios "Martin's iPad"   # a named device (or its UDID)
-#   scripts/install-apple.sh sim               # iOS Simulator (iPhone 16 Pro)
-#   scripts/install-apple.sh sim "iPad Air 11-inch (M2)"
+#   scripts/install-apple.sh sim               # iOS Simulator (iPhone 17 Pro)
+#   scripts/install-apple.sh sim "iPad Air 11-inch (M4)"
 #
 # Environment:
 #   NAKTV_MAC_INSTALL_DIR   where the Mac app goes (default /Applications)
@@ -89,13 +89,27 @@ case "$TARGET" in
     ;;
 
   sim)
-    NAME=${DEVICE:-iPhone 16 Pro}
-    xcrun simctl boot "$NAME" 2>/dev/null || true
+    NAME=${DEVICE:-iPhone 17 Pro}
+    # By UDID, on the newest runtime that has a device of that name: names
+    # repeat across runtimes, and xcodebuild only looks at the latest.
+    SIM=$(xcrun simctl list devices available --json | python3 -c '
+import json, sys
+name = sys.argv[1]
+runtimes = json.load(sys.stdin)["devices"]
+def version(runtime):
+    return [int(p) for p in runtime.rsplit("iOS-", 1)[-1].split("-")] if "iOS-" in runtime else []
+for runtime in sorted(runtimes, key=version, reverse=True):
+    for device in runtimes[runtime]:
+        if version(runtime) and device["name"] == name:
+            print(device["udid"]); sys.exit()
+sys.exit(f"install-apple: no available simulator named {name!r}")
+' "$NAME")
+    xcrun simctl boot "$SIM" 2>/dev/null || true
     open -a Simulator
-    build -scheme NakTV-iOS -configuration Debug -destination "platform=iOS Simulator,name=$NAME"
-    xcrun simctl install "$NAME" "$DERIVED/Build/Products/Debug-iphonesimulator/NakTV.app"
-    xcrun simctl terminate "$NAME" "$APP_ID" 2>/dev/null || true
-    xcrun simctl launch "$NAME" "$APP_ID" ${LAUNCH_ARGS[@]+"${LAUNCH_ARGS[@]}"}
+    build -scheme NakTV-iOS -configuration Debug -destination "id=$SIM"
+    xcrun simctl install "$SIM" "$DERIVED/Build/Products/Debug-iphonesimulator/NakTV.app"
+    xcrun simctl terminate "$SIM" "$APP_ID" 2>/dev/null || true
+    xcrun simctl launch "$SIM" "$APP_ID" ${LAUNCH_ARGS[@]+"${LAUNCH_ARGS[@]}"}
     ;;
 
   ios)
