@@ -37,3 +37,10 @@ lcov.info
 .DS_Store
 .idea/
 .vscode/
+
+# Apple — the Xcode project is generated from apple/project.yml by xcodegen,
+# and www/ is copied in from app/dist by scripts/install-apple.sh.
+apple/NakTV.xcodeproj/
+apple/www/
+apple/build/
+apple/Config/Local.xcconfig

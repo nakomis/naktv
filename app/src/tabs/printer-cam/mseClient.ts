@@ -105,6 +105,26 @@ const STALL_CHECK_MS = 2000;
  */
 const STALL_LIMIT_MS = 8000;
 
+/**
+ * The MediaSource to play through, and whether it is the managed kind.
+ *
+ * The TVs have the classic MediaSource. iPhone WebKit doesn't, and never has:
+ * since iOS 17.1 it offers ManagedMediaSource instead, which takes the same
+ * SourceBuffer calls but lets the system decide when to buffer and evict
+ * (NAKTV-31). iPad and macOS have both, and get the classic one.
+ */
+function mediaSourceConstructor():
+  | { Constructor: typeof MediaSource; managed: boolean }
+  | undefined {
+  const scope = globalThis as {
+    MediaSource?: typeof MediaSource;
+    ManagedMediaSource?: typeof MediaSource;
+  };
+  if (scope.MediaSource) return { Constructor: scope.MediaSource, managed: false };
+  if (scope.ManagedMediaSource) return { Constructor: scope.ManagedMediaSource, managed: true };
+  return undefined;
+}
+
 export interface MseHandlers {
   /** Fired once media is actually flowing. */
   onPlaying?: () => void;
@@ -206,13 +226,28 @@ export function connectMse(
     }, STALL_CHECK_MS);
   };
 
-  if (typeof MediaSource === 'undefined') {
-    // jsdom, and any browser too old to matter here.
+  const source = mediaSourceConstructor();
+  if (!source) {
+    // jsdom, an iPhone before iOS 17.1, and any browser too old to matter here.
     queueMicrotask(() => fail('MediaSource unavailable'));
     return { close: () => undefined };
   }
 
-  const mediaSource = new MediaSource();
+  if (source.managed) {
+    // A ManagedMediaSource never opens on an element that could be handed to
+    // AirPlay, unless an AirPlay-able alternative source is offered too. There
+    // is none for a live go2rtc socket, so opt out of remote playback.
+    (video as { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
+  }
+
+  const mediaSource = new source.Constructor();
+  if (source.managed) {
+    // The system's hints about when it wants data. A live feed can't pause
+    // for them, so they are only logged: if the picture dies on an iPhone,
+    // this says whether WebKit asked us to stop first.
+    mediaSource.addEventListener('startstreaming', () => log('managed: startstreaming'));
+    mediaSource.addEventListener('endstreaming', () => log('managed: endstreaming'));
+  }
   objectUrl = URL.createObjectURL(mediaSource);
   video.src = objectUrl;
 

@@ -1,0 +1,15 @@
+// Shared by both targets. Machine-specific overrides (another team, another
+// macOS signing identity) go in Local.xcconfig beside this file, which is
+// git-ignored and optional.
+
+DEVELOPMENT_TEAM = 62YFUFBSFX
+CODE_SIGN_STYLE = Automatic
+
+// The Mac app is signed with the Developer ID certificate, so the .app runs
+// on any Mac without a provisioning profile. Neither entitlement it uses
+// (sandbox, outgoing network) needs one.
+CODE_SIGN_STYLE[sdk=macosx*] = Manual
+CODE_SIGN_IDENTITY[sdk=macosx*] = Developer ID Application
+ENABLE_HARDENED_RUNTIME[sdk=macosx*] = YES
+
+#include? "Local.xcconfig"
