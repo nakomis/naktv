@@ -71,7 +71,9 @@ xcodegen from `apple/project.yml`; don't commit `NakTV.xcodeproj`.
   managed one only opens on a `<video>` with `disableRemotePlayback` set.
 - **Muted on purpose.** The same user script pins
   `HTMLMediaElement.prototype.muted` to true, because `CameraFeed.tsx` unmutes
-  once frames arrive. The sound is for the TVs only.
+  once frames arrive. The sound is for the TVs only. It holds only for media
+  that starts muted, as the one `<video>` does; a future `<audio>` or
+  `new Audio()` would play sound unless it is muted too.
 - **`window.close()`** is overridden by a user script to post to the native
   side, as on Android.
 - **The page's console goes to the unified log** (subsystem

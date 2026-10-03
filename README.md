@@ -192,7 +192,7 @@ WKWebView shell in `apple/`. The Xcode project is generated from
 
 ```sh
 scripts/install-apple.sh mac                   # build, copy to /Applications, launch
-scripts/install-apple.sh ios                   # the one paired iPhone/iPad
+scripts/install-apple.sh ios                   # the one connected iPhone/iPad
 scripts/install-apple.sh ios "Martin's iPad"   # a named device, or its UDID
 scripts/install-apple.sh sim                   # iOS Simulator (iPhone 17 Pro)
 ```
@@ -206,8 +206,10 @@ on WebKit preferences Apple doesn't publish (see below), which App Review
 would refuse.
 
 - **Signing.** `apple/Config/NakTV.xcconfig` sets team `62YFUFBSFX`. The Mac
-  app is signed with the Developer ID certificate, so the `.app` runs on any
-  Mac. The iOS app uses automatic signing: Xcode must be signed in to the
+  app is signed with the Developer ID certificate. Built here it runs here;
+  to copy it to another Mac, notarise it first —
+  `NAKTV_NOTARY_PROFILE=<profile> scripts/install-apple.sh mac`, after
+  storing credentials once with `xcrun notarytool store-credentials`. The iOS app uses automatic signing: Xcode must be signed in to the
   team's Apple ID, and `-allowProvisioningUpdates` lets it make the
   development certificate and profile, and register the device, first time
   round. Override either in `apple/Config/Local.xcconfig` (git-ignored).

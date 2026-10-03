@@ -12,4 +12,10 @@ CODE_SIGN_STYLE[sdk=macosx*] = Manual
 CODE_SIGN_IDENTITY[sdk=macosx*] = Developer ID Application
 ENABLE_HARDENED_RUNTIME[sdk=macosx*] = YES
 
+// What notarytool insists on, and a plain `xcodebuild build` doesn't do: a
+// secure timestamp, and no get-task-allow (the debugger entitlement Xcode
+// injects unless told not to). Release only, so Debug builds still attach.
+OTHER_CODE_SIGN_FLAGS[sdk=macosx*][config=Release] = --timestamp
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS[sdk=macosx*][config=Release] = NO
+
 #include? "Local.xcconfig"

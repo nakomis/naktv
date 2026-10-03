@@ -2,7 +2,7 @@
 # Build NakTV for macOS or iOS and install it directly — no App Store.
 #
 #   scripts/install-apple.sh mac               # build, copy to /Applications, launch
-#   scripts/install-apple.sh ios               # the one connected iPhone/iPad
+#   scripts/install-apple.sh ios               # the paired iPhone/iPad (the one plugged in, if several)
 #   scripts/install-apple.sh ios "Martin's iPad"   # a named device (or its UDID)
 #   scripts/install-apple.sh sim               # iOS Simulator (iPhone 17 Pro)
 #   scripts/install-apple.sh sim "iPad Air 11-inch (M4)"
@@ -126,7 +126,10 @@ for d in json.load(open(sys.argv[1]))["result"]["devices"]:
         print(d["identifier"])
 ' "$PAIRING_JSON" | while read -r unpaired; do
       echo "install-apple: pairing $unpaired — tap Trust on the device and enter its passcode"
-      xcrun devicectl manage pair --device "$unpaired" >/dev/null
+      xcrun devicectl manage pair --device "$unpaired" </dev/null >/dev/null || {
+        echo "install-apple: pairing $unpaired failed" >&2
+        exit 1
+      }
     done
     rm -f "$PAIRING_JSON"
 
@@ -138,13 +141,23 @@ import json, sys
 devices = json.load(open(sys.argv[1]))["result"]["devices"]
 wanted = sys.argv[2]
 def usable(d):
+    # Paired devices stay listed when they are out of reach; skip those, or
+    # a bare `ios` finds every device ever paired.
+    connection = d.get("connectionProperties", {})
     return d.get("hardwareProperties", {}).get("platform") == "iOS" \
-        and d.get("connectionProperties", {}).get("pairingState") == "paired"
+        and connection.get("pairingState") == "paired" \
+        and connection.get("tunnelState") != "unavailable"
 matches = [d for d in devices if usable(d) and (not wanted or wanted in (
     d["deviceProperties"].get("name"), d["hardwareProperties"].get("udid"), d.get("identifier")))]
+if len(matches) > 1 and not wanted:
+    # Paired devices on the same Wi-Fi are reachable too; with no name given,
+    # the one plugged in is the one meant.
+    wired = [d for d in matches if d["connectionProperties"].get("transportType") == "wired"]
+    if len(wired) == 1:
+        matches = wired
 if len(matches) != 1:
     names = [d["deviceProperties"].get("name") for d in devices if usable(d)]
-    sys.exit(f"install-apple: need exactly one matching paired iOS device, found {len(matches)} (paired: {names})")
+    sys.exit(f"install-apple: need exactly one matching paired iOS device, found {len(matches)} (connected and paired: {names})")
 print(matches[0]["hardwareProperties"]["udid"])
 EOF
     )

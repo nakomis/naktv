@@ -15,8 +15,8 @@ private let logger = Logger(subsystem: "com.nakomis.naktv", category: "web")
 ///     sets WebKit's private preferences by key — fine for a build installed
 ///     straight from Xcode, and the reason this could never go through App
 ///     Review.
-///  2. Media that starts, and unmutes, without a tap: the feed autoplays
-///     muted and unmutes once frames arrive (`CameraFeed.tsx`).
+///  2. Media that starts without a tap: the feed autoplays muted
+///     (`CameraFeed.tsx`), and stays muted here — see `bridgeScript`.
 ///  3. `window.close()`, which the page calls on Back, turned into something
 ///     native — see `onExit`.
 final class NakTVWebController: NSObject {
@@ -71,6 +71,10 @@ final class NakTVWebController: NSObject {
         #else
         webView.setValue(false, forKey: "drawsBackground")
         #endif
+    }
+
+    deinit {
+        probeTimer?.invalidate()
     }
 
     func load() {

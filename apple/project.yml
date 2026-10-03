@@ -23,12 +23,14 @@ settings:
 # Shared by both targets' Info.plists.
 #
 # App Transport Security: everything NakTV talks to is plain http/ws on the
-# LAN (go2rtc, mjpg-streamer, cthulhu, OctoPrint), by IP.
+# LAN (go2rtc, mjpg-streamer, cthulhu, OctoPrint), by IP, which
+# NSAllowsLocalNetworking covers. It does not cover a plain-http host on the
+# internet — and adding NSAllowsArbitraryLoads wouldn't either, because ATS
+# ignores that key whenever NSAllowsLocalNetworking is present.
 # Local network: iOS 14+ and macOS 15+ ask before an app reaches the LAN.
 x-common-info: &common-info
   CFBundleDisplayName: NakTV
   NSAppTransportSecurity:
-    NSAllowsArbitraryLoads: true
     NSAllowsLocalNetworking: true
   NSLocalNetworkUsageDescription: NakTV shows the printer cameras and status from servers on your home network.
 

@@ -44,3 +44,8 @@ apple/NakTV.xcodeproj/
 apple/www/
 apple/build/
 apple/Config/Local.xcconfig
+# Written by xcodegen from project.yml's info/entitlements properties; edit
+# those, not these.
+apple/iOS/Info.plist
+apple/macOS/Info.plist
+apple/macOS/NakTV.entitlements
