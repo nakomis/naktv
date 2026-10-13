@@ -46,6 +46,9 @@ If you find this useful, please consider buying me a coffee:
 - **Printer Cam** shows OctoPrint's mjpg-streamer feed scaled to fill the
   screen. It reconnects after a dropout, falls back to polling single frames
   if the stream keeps failing, and retries the stream every five minutes.
+  While a camera tab is on the MJPEG fallback rather than H.264, a small
+  `MJPEG` pill sits in the bottom-right corner, so a jerky picture reads as
+  the fallback rather than a fault.
 - **Elegoo** shows the resin printer (a Mars 5 Ultra) via cthulhu's camera
   service, with the same reconnect/fallback behaviour, and a status overlay
   from cthulhu's `/api/status` — job, layer count and progress rather than

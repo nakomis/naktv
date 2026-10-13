@@ -136,6 +136,24 @@ body {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+/* NAKTV-23: a quiet pill in the bottom-right corner while a feed is on its
+   MJPEG fallback. Muted grey on a dark scrim, the same pill shape as the tabs,
+   so it reads from the sofa without drawing the eye from the picture. The
+   bottom corner keeps it clear of the print overlay and the layer image. */
+.feed-mode-badge {
+  position: absolute;
+  right: 3vh;
+  bottom: 3vh;
+  z-index: 1;
+  padding: 0.5vh 1.6vh;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--overlay-label);
+  font-size: 1.7vh;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
 @keyframes pulse {
   0%,
   100% {
