@@ -5,7 +5,7 @@ import { ElegooCam } from './ElegooCam';
 
 // The MSE/MJPEG mechanics themselves are covered by PrinterCam.test.tsx —
 // CameraFeed is shared, so these only need to check what's specific to this
-// tab: the stream name and the fallback URL.
+// tab: the stream name, the fallback URL and the MJPEG badge (NAKTV-23).
 describe('ElegooCam', () => {
   let socketUrls: string[];
 
@@ -65,6 +65,14 @@ describe('ElegooCam', () => {
     }
     const img = screen.getByRole('img', { name: 'Elegoo resin printer camera' });
     expect(img.getAttribute('src')).toContain(CONFIG.elegooCam.streamUrl);
+    expect(screen.getByText('MJPEG')).toBeInTheDocument();
+  });
+
+  it('shows no MJPEG badge while on H.264', async () => {
+    vi.useFakeTimers();
+    render(<ElegooCam />);
+    await settle();
+    expect(screen.queryByText('MJPEG')).not.toBeInTheDocument();
   });
 
   it('shows the status-unavailable note rather than breaking the video', async () => {

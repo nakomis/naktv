@@ -141,7 +141,14 @@ export function CameraFeed({ config, ariaLabel, overlay }: CameraFeedProps) {
           onError={video.onError}
         />
       ) : (
-        <MjpegFeed config={config} ariaLabel={ariaLabel} />
+        <>
+          <MjpegFeed config={config} ariaLabel={ariaLabel} />
+          {/* NAKTV-23: say so when H.264 has given up, so a stuttering
+              picture reads as the fallback rather than a fault. */}
+          <span className="feed-mode-badge" title="Fallen back to MJPEG">
+            MJPEG
+          </span>
+        </>
       )}
     </div>
   );
