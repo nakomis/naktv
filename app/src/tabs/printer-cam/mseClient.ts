@@ -359,6 +359,19 @@ export function connectMse(
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       sourceBuffer = undefined;
       queue.length = 0;
+      // Let go of the MediaSource as well (NAKTV-8). Revoking the URL alone
+      // leaves it attached, holding the decoder and everything buffered;
+      // emptying the element closes it and returns the element to a clean
+      // slate for the next connection. Skipped if a newer one has already
+      // taken the element over.
+      if (objectUrl && video.getAttribute('src') === objectUrl) {
+        video.removeAttribute('src');
+        try {
+          video.load();
+        } catch {
+          // Not implemented everywhere (jsdom); the element is empty regardless.
+        }
+      }
     },
   };
 }

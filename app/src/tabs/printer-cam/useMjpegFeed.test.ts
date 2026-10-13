@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { type FeedConfig, useMjpegFeed } from './useMjpegFeed';
+import { RESUME_SETTLE_MS } from './usePageVisible';
 
 const config: FeedConfig = {
   streamUrl: 'http://cam/?action=stream',
@@ -81,7 +82,29 @@ describe('useMjpegFeed', () => {
     act(() => setHidden(true));
     expect(result.current.src).toBeUndefined();
     act(() => setHidden(false));
+    // Only once the return has settled (NAKTV-8).
+    expect(result.current.src).toBeUndefined();
+    act(() => vi.advanceTimersByTime(RESUME_SETTLE_MS));
     expect(result.current.src).toContain('action=stream');
+  });
+
+  it('does not start while the app is hidden', () => {
+    setHidden(true);
+    const { result } = renderHook(() => useMjpegFeed(config));
+    expect(result.current.src).toBeUndefined();
+  });
+
+  it('stops polling snapshots while backgrounded', () => {
+    const { result } = renderHook(() => useMjpegFeed(config));
+    for (let i = 0; i < config.maxStreamFailures; i++) {
+      act(() => result.current.onError());
+      act(() => vi.advanceTimersByTime(config.reconnectDelayMs));
+    }
+    expect(result.current.src).toContain('action=snapshot');
+    act(() => setHidden(true));
+    act(() => vi.advanceTimersByTime(config.snapshotIntervalMs * 5));
+    expect(result.current.src).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('cancels pending timers on unmount', () => {
