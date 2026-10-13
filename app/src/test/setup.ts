@@ -54,3 +54,6 @@ if (typeof globalThis.WebSocket === 'undefined') {
 // a Blob — including our fake MediaSource — so it is replaced outright.
 URL.createObjectURL = () => 'blob:naktv-test';
 URL.revokeObjectURL = () => undefined;
+// Not implemented in jsdom, which reports every call as an error. mseClient
+// calls it to empty the <video> when it lets go of a MediaSource.
+HTMLMediaElement.prototype.load = () => undefined;

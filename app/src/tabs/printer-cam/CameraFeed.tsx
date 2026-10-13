@@ -107,39 +107,55 @@ export function CameraFeed({ config, ariaLabel, overlay }: CameraFeedProps) {
 
   // The feed arrives over MSE rather than as a plain src: it is the only
   // transport this TV plays both the video and the muxed audio from.
+  //
+  // Only while the app is in the foreground (NAKTV-8). Backgrounded, the
+  // socket kept go2rtc streaming to a TV nobody was watching; now `close`
+  // drops it and lets go of the MediaSource, and coming back starts a fresh
+  // one. Muted again first, because webOS autoplays only a muted element and
+  // handlePlaying will have unmuted this one.
   useEffect(() => {
     const element = videoRef.current;
-    if (video.mode !== 'video' || !video.mseUrl || !element) return;
+    if (!video.visible || video.mode !== 'video' || !video.mseUrl || !element) return;
+    element.muted = true;
     const connection = connectMse(element, video.mseUrl, { onError: video.onError });
     return () => connection.close();
-  }, [video.mode, video.mseUrl, video.onError]);
+  }, [video.visible, video.mode, video.mseUrl, video.onError]);
 
   // Keep the player near the live edge; see liveEdge.ts for why it drifts.
   useEffect(() => {
-    if (video.mode !== 'video') return;
+    if (!video.visible || video.mode !== 'video') return;
     const timer = setInterval(() => {
       const element = videoRef.current;
       if (element) seekToLiveEdge(element, config);
     }, config.liveEdgeCheckMs);
     return () => clearInterval(timer);
-  }, [video.mode, config]);
+  }, [video.visible, video.mode, config]);
 
   return (
     <div className="camera-feed">
       {overlay}
       {video.mode === 'video' && video.mseUrl ? (
-        <video
-          ref={videoRef}
-          // No src: connectMse attaches the MediaSource. muted + autoPlay +
-          // playsInline is what lets webOS start it unattended, and
-          // handlePlaying unmutes it again once it has.
-          autoPlay
-          muted
-          playsInline
-          aria-label={ariaLabel}
-          onPlaying={handlePlaying}
-          onError={video.onError}
-        />
+        <>
+          <video
+            ref={videoRef}
+            // No src: connectMse attaches the MediaSource. muted + autoPlay +
+            // playsInline is what lets webOS start it unattended, and
+            // handlePlaying unmutes it again once it has.
+            autoPlay
+            muted
+            playsInline
+            aria-label={ariaLabel}
+            onPlaying={handlePlaying}
+            onError={video.onError}
+          />
+          {/* NAKTV-8: back from the background, until the video plays again. */}
+          {video.resuming && (
+            <div className="feed-status" role="status">
+              <span className="dot" />
+              Reconnecting…
+            </div>
+          )}
+        </>
       ) : (
         <>
           <MjpegFeed config={config} ariaLabel={ariaLabel} />

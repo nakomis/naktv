@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePageVisible } from './usePageVisible';
 
 export interface FeedConfig {
   streamUrl: string;
@@ -35,9 +36,11 @@ function cacheBust(url: string): string {
  * After `maxStreamFailures` consecutive errors it drops to polling single
  * snapshots — less smooth, but it survives a flaky multipart connection — and
  * periodically tries the stream again. Everything stops while the app is
- * backgrounded, so a hidden app doesn't hold a connection to the printer.
+ * backgrounded, so a hidden app doesn't hold a connection to the printer, and
+ * starts again once it has been back for a moment (see usePageVisible).
  */
 export function useMjpegFeed(config: FeedConfig): FeedState {
+  const visible = usePageVisible();
   const [src, setSrc] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string | null>('Connecting to printer…');
 
@@ -99,22 +102,16 @@ export function useMjpegFeed(config: FeedConfig): FeedState {
   }, [config.maxStreamFailures, config.reconnectDelayMs, startSnapshots, startStream]);
 
   useEffect(() => {
-    function onVisibilityChange() {
-      if (document.hidden) {
-        stopAll();
-        setSrc(undefined);
-      } else {
-        failures.current = 0;
-        startStream();
-      }
+    if (!visible) {
+      // Dropping the src takes the <img> away, and CameraFeed points a
+      // departing <img> at nothing, which is what aborts the load.
+      setSrc(undefined);
+      return;
     }
+    failures.current = 0;
     startStream();
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      stopAll();
-    };
-  }, [startStream, stopAll]);
+    return stopAll;
+  }, [visible, startStream, stopAll]);
 
   return { src, status, onLoad, onError };
 }

@@ -49,6 +49,12 @@ If you find this useful, please consider buying me a coffee:
   While a camera tab is on the MJPEG fallback rather than H.264, a small
   `MJPEG` pill sits in the bottom-right corner, so a jerky picture reads as
   the fallback rather than a fault.
+- **Camera feeds let go in the background.** When the app is hidden — another
+  input or app in front of it — a camera tab closes its websocket to go2rtc
+  (or its MJPEG stream) and releases the MediaSource, rather than streaming to
+  a TV nobody is watching. Once it has been back in front for a second it
+  reconnects with a fresh MediaSource, showing `Reconnecting…` until the
+  picture returns.
 - **Elegoo** shows the resin printer (a Mars 5 Ultra) via cthulhu's camera
   service, with the same reconnect/fallback behaviour, and a status overlay
   from cthulhu's `/api/status` — job, layer count and progress rather than

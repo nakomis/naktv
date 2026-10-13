@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { go2rtcUrls } from '../../config';
+import { usePageVisible } from './usePageVisible';
 
 export type FeedMode = 'video' | 'mjpeg';
 
@@ -26,6 +27,13 @@ export interface VideoFeedState {
   mode: FeedMode;
   /** go2rtc MSE endpoint while in video mode; undefined once we've given up. */
   mseUrl: string | undefined;
+  /**
+   * The app is in the foreground. While it isn't, nothing may hold a
+   * connection to go2rtc (NAKTV-8).
+   */
+  visible: boolean;
+  /** Back from the background, and the video has not started playing again yet. */
+  resuming: boolean;
   /** Video element is playing frames. */
   onPlaying: () => void;
   /** Video element failed — fall back now rather than waiting for the timer. */
@@ -42,20 +50,28 @@ export interface VideoFeedState {
  * drops to MJPEG and is retried every `videoRetryMs` — the picture is worse
  * but it is always there.
  *
+ * Every timer stops while the app is in the background (NAKTV-8), so a hidden
+ * app neither falls back nor retries; the caller drops the connection itself.
+ * On return the timeout starts afresh, with a full set of retries.
+ *
  * `host` is a dependency, so changing it in Settings re-tries H.264 at once.
  * `config.streamName` picks which go2rtc producer this instance plays —
  * `printer_av` or `resin_av` — shared plumbing, different camera.
  */
 export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedState {
+  const visible = usePageVisible();
   const [mode, setMode] = useState<FeedMode>('video');
   const [mseUrl, setMseUrl] = useState<string | undefined>(
     go2rtcUrls(config.streamName, host).mseUrl,
   );
+  const [resuming, setResuming] = useState(false);
 
   const timeoutTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const playing = useRef(false);
   const retries = useRef(0);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const clearTimers = useCallback(() => {
     clearTimeout(timeoutTimer.current);
@@ -65,6 +81,8 @@ export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedSt
   }, []);
 
   const fallBack = useCallback(() => {
+    // A connection let go for the background has not failed.
+    if (!visibleRef.current) return;
     clearTimers();
     playing.current = false;
 
@@ -81,18 +99,15 @@ export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedSt
 
     setMode('mjpeg');
     setMseUrl(undefined);
-    retryTimer.current = setTimeout(() => {
-      retries.current = 0;
-      setMode('video');
-      setMseUrl(go2rtcUrls(config.streamName, host).mseUrl);
-    }, config.videoRetryMs);
-  }, [clearTimers, config.reconnectDelayMs, config.videoRetryMs, config.streamName, host]);
+    setResuming(false);
+  }, [clearTimers, config.reconnectDelayMs, config.streamName, host]);
 
   const onPlaying = useCallback(() => {
     playing.current = true;
     retries.current = 0;
     clearTimeout(timeoutTimer.current);
     timeoutTimer.current = undefined;
+    setResuming(false);
   }, []);
 
   useEffect(() => {
@@ -105,13 +120,36 @@ export function useVideoFeed(config: VideoFeedConfig, host: string): VideoFeedSt
     return clearTimers;
   }, [host, config.streamName, clearTimers]);
 
+  // Backgrounded: stop the clocks. Whatever was playing has to start again on
+  // return, and gets a full set of retries to do it.
   useEffect(() => {
-    if (mode !== 'video' || !mseUrl) return;
+    if (visible) return;
+    clearTimers();
+    playing.current = false;
+    retries.current = 0;
+    setResuming(true);
+  }, [visible, clearTimers]);
+
+  useEffect(() => {
+    if (!visible || mode !== 'video' || !mseUrl) return;
     timeoutTimer.current = setTimeout(() => {
       if (!playing.current) fallBack();
     }, config.videoTimeoutMs);
     return () => clearTimeout(timeoutTimer.current);
-  }, [mode, mseUrl, config.videoTimeoutMs, fallBack]);
+  }, [visible, mode, mseUrl, config.videoTimeoutMs, fallBack]);
 
-  return { mode, mseUrl, onPlaying, onError: fallBack };
+  // On the fallback, try H.264 again now and then. Paused in the background,
+  // so the spell on MJPEG starts again on return.
+  useEffect(() => {
+    if (!visible || mode !== 'mjpeg') return;
+    const timer = setTimeout(() => {
+      retries.current = 0;
+      setResuming(false);
+      setMode('video');
+      setMseUrl(go2rtcUrls(config.streamName, host).mseUrl);
+    }, config.videoRetryMs);
+    return () => clearTimeout(timer);
+  }, [visible, mode, config.videoRetryMs, config.streamName, host]);
+
+  return { mode, mseUrl, visible, resuming, onPlaying, onError: fallBack };
 }
