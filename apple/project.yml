@@ -1,0 +1,94 @@
+# The Xcode project is generated from this file: `xcodegen generate` (or
+# scripts/install-apple.sh, which runs it). NakTV.xcodeproj is git-ignored.
+name: NakTV
+options:
+  bundleIdPrefix: com.nakomis
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Config/NakTV.xcconfig
+  Release: Config/NakTV.xcconfig
+settings:
+  base:
+    PRODUCT_NAME: NakTV
+    PRODUCT_BUNDLE_IDENTIFIER: com.nakomis.naktv
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: 5.0
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    GENERATE_INFOPLIST_FILE: NO
+
+# Shared by both targets' Info.plists.
+#
+# App Transport Security: everything NakTV talks to is plain http/ws on the
+# LAN (go2rtc, mjpg-streamer, cthulhu, OctoPrint), by IP, which
+# NSAllowsLocalNetworking covers. It does not cover a plain-http host on the
+# internet — and adding NSAllowsArbitraryLoads wouldn't either, because ATS
+# ignores that key whenever NSAllowsLocalNetworking is present.
+# Local network: iOS 14+ and macOS 15+ ask before an app reaches the LAN.
+x-common-info: &common-info
+  CFBundleDisplayName: NakTV
+  NSAppTransportSecurity:
+    NSAllowsLocalNetworking: true
+  NSLocalNetworkUsageDescription: NakTV shows the printer cameras and status from servers on your home network.
+
+targets:
+  NakTV-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - Shared
+      - iOS
+      - Assets.xcassets
+      # app/dist, copied in by scripts/install-apple.sh; a folder reference so
+      # it lands in the bundle as www/ with its layout intact.
+      - path: www
+        type: folder
+        buildPhase: resources
+    info:
+      path: iOS/Info.plist
+      properties:
+        <<: *common-info
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIStatusBarHidden: true
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UILaunchScreen_Generation: NO
+
+  NakTV-macOS:
+    type: application
+    platform: macOS
+    sources:
+      - Shared
+      - macOS
+      - Assets.xcassets
+      - path: www
+        type: folder
+        buildPhase: resources
+    info:
+      path: macOS/Info.plist
+      properties:
+        <<: *common-info
+        LSApplicationCategoryType: public.app-category.entertainment
+        NSHumanReadableCopyright: CC0 — no rights reserved.
+    entitlements:
+      path: macOS/NakTV.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true

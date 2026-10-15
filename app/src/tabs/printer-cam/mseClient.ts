@@ -17,6 +17,28 @@
 const CODECS = 'avc1.640029,avc1.42E01E,mp4a.40.2';
 
 /**
+ * Concatenates queued segments, so one append carries everything that arrived
+ * while the last one was in progress (NAKTV-27).
+ *
+ * Appending them one at a time made the TV's per-append overhead - each one a
+ * round trip through "updating" and updateend - the bottleneck: segments
+ * arrived faster than that, the queue grew until it overflowed, and the feed
+ * fell back. go2rtc's own player batches its appends for the same reason.
+ */
+function concatSegments(segments: ArrayBuffer[]): ArrayBuffer {
+  if (segments.length === 1) return segments[0];
+  let total = 0;
+  for (const segment of segments) total += segment.byteLength;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const segment of segments) {
+    out.set(new Uint8Array(segment), offset);
+    offset += segment.byteLength;
+  }
+  return out.buffer;
+}
+
+/**
  * A queue this deep means we are not keeping up at all.
  *
  * Segments are never dropped to trim it: dropping one that has not been
@@ -30,6 +52,40 @@ const MAX_QUEUED_SEGMENTS = 120;
 
 /** Seconds of already-played buffer to keep before evicting. */
 const BUFFER_KEEP_SECONDS = 20;
+
+/**
+ * How much played buffer to keep when the TV refuses an append for lack of
+ * room (QuotaExceededError): just enough that the playhead is not left at the
+ * very edge of what remains.
+ */
+const QUOTA_KEEP_SECONDS = 1;
+
+/** How many recent events `mseLog` keeps. */
+const LOG_LIMIT = 50;
+
+export interface MseLogEntry {
+  at: string;
+  event: string;
+}
+
+/**
+ * Recent failures and recoveries, newest last (NAKTV-27).
+ *
+ * Every failure used to go to onError and nowhere else, so when the sound died
+ * there was no record of why. Also reachable as `window.__naktvMseLog`, for
+ * reading over ares-inspect without a rebuild.
+ */
+export const mseLog: MseLogEntry[] = [];
+
+function log(event: string): void {
+  mseLog.push({ at: new Date().toISOString(), event });
+  if (mseLog.length > LOG_LIMIT) mseLog.shift();
+  console.warn(`[naktv/mse] ${event}`);
+}
+
+if (typeof window !== 'undefined') {
+  (window as unknown as { __naktvMseLog: MseLogEntry[] }).__naktvMseLog = mseLog;
+}
 
 /** How often to check that playback is still progressing. */
 const STALL_CHECK_MS = 2000;
@@ -48,6 +104,26 @@ const STALL_CHECK_MS = 2000;
  * also the thing that actually stops, so it is the honest signal.
  */
 const STALL_LIMIT_MS = 8000;
+
+/**
+ * The MediaSource to play through, and whether it is the managed kind.
+ *
+ * The TVs have the classic MediaSource. iPhone WebKit doesn't, and never has:
+ * since iOS 17.1 it offers ManagedMediaSource instead, which takes the same
+ * SourceBuffer calls but lets the system decide when to buffer and evict
+ * (NAKTV-31). iPad and macOS have both, and get the classic one.
+ */
+function mediaSourceConstructor():
+  | { Constructor: typeof MediaSource; managed: boolean }
+  | undefined {
+  const scope = globalThis as {
+    MediaSource?: typeof MediaSource;
+    ManagedMediaSource?: typeof MediaSource;
+  };
+  if (scope.MediaSource) return { Constructor: scope.MediaSource, managed: false };
+  if (scope.ManagedMediaSource) return { Constructor: scope.ManagedMediaSource, managed: true };
+  return undefined;
+}
 
 export interface MseHandlers {
   /** Fired once media is actually flowing. */
@@ -74,6 +150,8 @@ export function connectMse(
   let sourceBuffer: SourceBuffer | undefined;
   let objectUrl: string | undefined;
   let closed = false;
+  /** Set by the first failure: everything after it on this connection is ignored. */
+  let failed = false;
   let stallTimer: ReturnType<typeof setInterval> | undefined;
 
   const queue: ArrayBuffer[] = [];
@@ -83,9 +161,17 @@ export function connectMse(
     stallTimer = undefined;
   };
 
+  /**
+   * Reports a failure, once. Segments keep arriving until the caller tears the
+   * connection down, and each one used to fail again: 50 onError calls in a
+   * second used up useVideoFeed's quick retries at once and left the silent
+   * MJPEG fallback up for two minutes (NAKTV-27).
+   */
   const fail = (reason: string) => {
-    if (closed) return;
+    if (closed || failed) return;
+    failed = true;
     stopWatchdog();
+    log(`failed: ${reason}`);
     handlers.onError?.(reason);
   };
 
@@ -130,48 +216,92 @@ export function connectMse(
     lastSegmentAt = Date.now();
     stallTimer = setInterval(() => {
       if (closed) return;
+      // On the timer as well as between appends: segments arrive back to
+      // back, so the queue can go minutes without being empty at an
+      // updateend, and the buffer grew unchecked until the TV refused an
+      // append (NAKTV-27).
+      evict();
       if (skipGapIfStranded()) return;
       if (Date.now() - lastSegmentAt >= STALL_LIMIT_MS) fail('stalled');
     }, STALL_CHECK_MS);
   };
 
-  if (typeof MediaSource === 'undefined') {
-    // jsdom, and any browser too old to matter here.
+  const source = mediaSourceConstructor();
+  if (!source) {
+    // jsdom, an iPhone before iOS 17.1, and any browser too old to matter here.
     queueMicrotask(() => fail('MediaSource unavailable'));
     return { close: () => undefined };
   }
 
-  const mediaSource = new MediaSource();
+  if (source.managed) {
+    // A ManagedMediaSource never opens on an element that could be handed to
+    // AirPlay, unless an AirPlay-able alternative source is offered too. There
+    // is none for a live go2rtc socket, so opt out of remote playback.
+    (video as { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
+  }
+
+  const mediaSource = new source.Constructor();
+  if (source.managed) {
+    // The system's hints about when it wants data. A live feed can't pause
+    // for them, so they are only logged: if the picture dies on an iPhone,
+    // this says whether WebKit asked us to stop first.
+    mediaSource.addEventListener('startstreaming', () => log('managed: startstreaming'));
+    mediaSource.addEventListener('endstreaming', () => log('managed: endstreaming'));
+  }
   objectUrl = URL.createObjectURL(mediaSource);
   video.src = objectUrl;
 
-  /** Drop buffered data we have already played, so memory doesn't creep up. */
-  const evict = () => {
-    if (!sourceBuffer || sourceBuffer.updating) return;
+  /**
+   * Drop buffered data older than `keepSeconds` behind the playhead, so memory
+   * doesn't creep up. Returns whether a removal was started.
+   */
+  const evict = (keepSeconds: number = BUFFER_KEEP_SECONDS): boolean => {
+    if (!sourceBuffer || sourceBuffer.updating) return false;
     const buffered = sourceBuffer.buffered;
-    if (!buffered.length) return;
+    if (!buffered.length) return false;
     const start = buffered.start(0);
-    const cutoff = video.currentTime - BUFFER_KEEP_SECONDS;
-    if (cutoff > start) {
-      try {
-        sourceBuffer.remove(start, cutoff);
-      } catch {
-        // Removal is best-effort; a failure here is not worth dropping the feed.
-      }
+    const cutoff = video.currentTime - keepSeconds;
+    if (cutoff <= start) return false;
+    try {
+      sourceBuffer.remove(start, cutoff);
+      return true;
+    } catch (error) {
+      // Not worth dropping the feed over, but no longer silent: a removal
+      // that keeps failing is how the buffer fills.
+      log(`remove failed: ${(error as Error).name}`);
+      return false;
     }
   };
 
+  /** Set while an append refused for lack of room waits to be retried. */
+  let retryingAfterQuota = false;
+
   const flush = () => {
-    if (closed || !sourceBuffer || sourceBuffer.updating) return;
-    const next = queue.shift();
-    if (!next) {
+    if (closed || failed || !sourceBuffer || sourceBuffer.updating) return;
+    if (!queue.length) {
       evict();
       return;
     }
+    const next = concatSegments(queue.splice(0));
     try {
       sourceBuffer.appendBuffer(next);
+      if (retryingAfterQuota) log('recovered: append succeeded after trimming');
+      retryingAfterQuota = false;
     } catch (error) {
-      fail(`appendBuffer: ${(error as Error).name}`);
+      const name = (error as Error).name;
+      // The TV's buffer is full. Trim hard and retry the same segment once the
+      // removal completes (its updateend calls flush again). Dropping it would
+      // punch a hole the playhead can't cross. Fail only if trimming frees
+      // nothing, or if the retry is refused too.
+      if (name === 'QuotaExceededError' && !retryingAfterQuota) {
+        queue.unshift(next);
+        retryingAfterQuota = true;
+        if (evict(QUOTA_KEEP_SECONDS)) {
+          log('buffer full: trimmed to retry the append');
+          return;
+        }
+      }
+      fail(`appendBuffer: ${name}`);
     }
   };
 
@@ -190,7 +320,7 @@ export function connectMse(
     socket.onclose = () => fail('websocket closed');
 
     socket.onmessage = (event: MessageEvent) => {
-      if (closed) return;
+      if (closed || failed) return;
 
       if (typeof event.data === 'string') {
         const message = JSON.parse(event.data) as { type: string; value: string };
@@ -229,6 +359,19 @@ export function connectMse(
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       sourceBuffer = undefined;
       queue.length = 0;
+      // Let go of the MediaSource as well (NAKTV-8). Revoking the URL alone
+      // leaves it attached, holding the decoder and everything buffered;
+      // emptying the element closes it and returns the element to a clean
+      // slate for the next connection. Skipped if a newer one has already
+      // taken the element over.
+      if (objectUrl && video.getAttribute('src') === objectUrl) {
+        video.removeAttribute('src');
+        try {
+          video.load();
+        } catch {
+          // Not implemented everywhere (jsdom); the element is empty regardless.
+        }
+      }
     },
   };
 }

@@ -1,0 +1,21 @@
+// Shared by both targets. Machine-specific overrides (another team, another
+// macOS signing identity) go in Local.xcconfig beside this file, which is
+// git-ignored and optional.
+
+DEVELOPMENT_TEAM = 62YFUFBSFX
+CODE_SIGN_STYLE = Automatic
+
+// The Mac app is signed with the Developer ID certificate, so the .app runs
+// on any Mac without a provisioning profile. Neither entitlement it uses
+// (sandbox, outgoing network) needs one.
+CODE_SIGN_STYLE[sdk=macosx*] = Manual
+CODE_SIGN_IDENTITY[sdk=macosx*] = Developer ID Application
+ENABLE_HARDENED_RUNTIME[sdk=macosx*] = YES
+
+// What notarytool insists on, and a plain `xcodebuild build` doesn't do: a
+// secure timestamp, and no get-task-allow (the debugger entitlement Xcode
+// injects unless told not to). Release only, so Debug builds still attach.
+OTHER_CODE_SIGN_FLAGS[sdk=macosx*][config=Release] = --timestamp
+CODE_SIGN_INJECT_BASE_ENTITLEMENTS[sdk=macosx*][config=Release] = NO
+
+#include? "Local.xcconfig"

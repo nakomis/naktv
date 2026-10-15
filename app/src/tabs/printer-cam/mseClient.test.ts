@@ -1,84 +1,5 @@
-import { connectMse } from './mseClient';
-
-/**
- * The fakes are driven by hand rather than on a timer: every test wants to say
- * "now the socket opened", "now go2rtc replied", and assert in between.
- */
-class FakeSourceBuffer extends EventTarget {
-  mode = 'segments';
-  updating = false;
-  appended: ArrayBuffer[] = [];
-  removed: Array<[number, number]> = [];
-  buffered = { length: 1, start: () => 0, end: () => 100 } as unknown as TimeRanges;
-  appendBuffer(data: ArrayBuffer) {
-    this.appended.push(data);
-  }
-  remove(start: number, end: number) {
-    this.removed.push([start, end]);
-  }
-}
-
-class FakeMediaSource extends EventTarget {
-  static last: FakeMediaSource | undefined;
-  buffers: FakeSourceBuffer[] = [];
-  mime: string | undefined;
-  throwOnAdd = false;
-
-  constructor() {
-    super();
-    FakeMediaSource.last = this;
-  }
-  addSourceBuffer(mime: string) {
-    if (this.throwOnAdd) throw new DOMException('bad codec', 'NotSupportedError');
-    this.mime = mime;
-    const buffer = new FakeSourceBuffer();
-    this.buffers.push(buffer);
-    return buffer as unknown as SourceBuffer;
-  }
-  open() {
-    this.dispatchEvent(new Event('sourceopen'));
-  }
-}
-
-class FakeSocket {
-  static last: FakeSocket | undefined;
-  binaryType = '';
-  sent: string[] = [];
-  closed = false;
-  onopen: ((e: Event) => void) | null = null;
-  onclose: ((e: Event) => void) | null = null;
-  onerror: ((e: Event) => void) | null = null;
-  onmessage: ((e: MessageEvent) => void) | null = null;
-
-  url: string;
-
-  constructor(url: string) {
-    this.url = url;
-    FakeSocket.last = this;
-  }
-  send(data: string) {
-    this.sent.push(data);
-  }
-  close() {
-    this.closed = true;
-  }
-}
-
-/** A TimeRanges stand-in, since jsdom's buffered is empty and read-only. */
-function ranges(pairs: Array<[number, number]>): TimeRanges {
-  return {
-    length: pairs.length,
-    start: (i: number) => pairs[i][0],
-    end: (i: number) => pairs[i][1],
-  } as unknown as TimeRanges;
-}
-
-function makeVideo(currentTime = 90, buffered: Array<[number, number]> = []): HTMLVideoElement {
-  const video = document.createElement('video');
-  Object.defineProperty(video, 'currentTime', { value: currentTime, writable: true });
-  Object.defineProperty(video, 'buffered', { value: ranges(buffered), writable: true });
-  return video;
-}
+import { FakeMediaSource, FakeSocket, makeVideo, reply } from '../../test/mseHarness';
+import { connectMse, mseLog } from './mseClient';
 
 /** Drives a connection up to the point where a SourceBuffer exists. */
 function openStream(video: HTMLVideoElement = makeVideo()) {
@@ -93,16 +14,11 @@ function openStream(video: HTMLVideoElement = makeVideo()) {
   return { video, onError, onPlaying, connection };
 }
 
-function reply(mime = 'video/mp4; codecs="avc1.640029,mp4a.40.2"') {
-  FakeSocket.last?.onmessage?.(
-    new MessageEvent('message', { data: JSON.stringify({ type: 'mse', value: mime }) }),
-  );
-}
-
 describe('connectMse', () => {
   beforeEach(() => {
     FakeMediaSource.last = undefined;
     FakeSocket.last = undefined;
+    FakeSocket.all = [];
     vi.stubGlobal('MediaSource', FakeMediaSource);
     vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('URL', {
@@ -178,6 +94,23 @@ describe('connectMse', () => {
 
     FakeSocket.last?.onclose?.(new Event('close'));
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  // NAKTV-8: torn down for the background, the element must not be left
+  // holding the old MediaSource, or the decoder and its buffer with it.
+  it('empties the element on close, letting go of the MediaSource', () => {
+    const { video, connection } = openStream();
+    expect(video.getAttribute('src')).toBe('blob:test');
+    connection.close();
+    expect(video.hasAttribute('src')).toBe(false);
+  });
+
+  it('leaves the element alone if a newer connection has taken it over', () => {
+    const video = makeVideo();
+    const old = connectMse(video, 'ws://phi:1984/api/ws?src=printer_av');
+    video.src = 'blob:newer';
+    old.close();
+    expect(video.getAttribute('src')).toBe('blob:newer');
   });
 
   // go2rtc restarting a producer leaves the socket open and simply stops
@@ -284,5 +217,162 @@ describe('connectMse', () => {
     connectMse(makeVideo(), 'ws://phi:1984/api/ws?src=printer_av', { onError });
     await Promise.resolve();
     expect(onError).toHaveBeenCalledWith('MediaSource unavailable');
+  });
+
+  describe('ManagedMediaSource (NAKTV-31)', () => {
+    beforeEach(() => {
+      // An iPhone: no classic MediaSource, only the managed one.
+      vi.stubGlobal('MediaSource', undefined);
+      vi.stubGlobal('ManagedMediaSource', FakeMediaSource);
+    });
+
+    it('plays through ManagedMediaSource where there is no MediaSource', () => {
+      const { onError, onPlaying } = openStream();
+      reply();
+      expect(FakeSocket.last?.url).toBe('ws://phi:1984/api/ws?src=printer_av');
+      expect(onPlaying).toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('opts the element out of remote playback, or the source never opens', () => {
+      const video = makeVideo();
+      connectMse(video, 'ws://phi:1984/api/ws?src=printer_av');
+      expect((video as { disableRemotePlayback?: boolean }).disableRemotePlayback).toBe(true);
+    });
+
+    it('logs the system asking it to stop streaming', () => {
+      openStream();
+      FakeMediaSource.last?.dispatchEvent(new Event('endstreaming'));
+      expect(mseLog[mseLog.length - 1]?.event).toBe('managed: endstreaming');
+    });
+
+    it('prefers the classic MediaSource where both exist', () => {
+      class OtherSource extends FakeMediaSource {}
+      vi.stubGlobal('MediaSource', OtherSource);
+      const video = makeVideo();
+      connectMse(video, 'ws://phi:1984/api/ws?src=printer_av');
+      expect(FakeMediaSource.last).toBeInstanceOf(OtherSource);
+      expect((video as { disableRemotePlayback?: boolean }).disableRemotePlayback).toBeFalsy();
+    });
+  });
+
+  describe('buffer management (NAKTV-27)', () => {
+    function segment() {
+      FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: new ArrayBuffer(4) }));
+    }
+
+    beforeEach(() => {
+      mseLog.length = 0;
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    // Segments arrive back to back, so the queue can go minutes without being
+    // empty at an updateend. On the TV that let the buffer reach 74 s.
+    it('trims on a timer even when the queue never empties', () => {
+      vi.useFakeTimers();
+      try {
+        openStream(makeVideo(90));
+        reply();
+        const buffer = FakeMediaSource.last?.buffers[0];
+        segment();
+        expect(buffer?.removed).toEqual([]);
+
+        vi.advanceTimersByTime(2000);
+        expect(buffer?.removed).toEqual([[0, 70]]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('trims hard and retries the same segment when the buffer is full', () => {
+      const { onError } = openStream(makeVideo(90));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.quotaFailures = 1;
+
+      const refused = new ArrayBuffer(8);
+      FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: refused }));
+      // Trimmed to a second behind the playhead, and nothing appended yet.
+      expect(buffer.removed).toEqual([[0, 89]]);
+      expect(buffer.appended).toEqual([]);
+
+      // The removal finishing is what retries it: same segment, not dropped.
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(buffer.appended).toEqual([refused]);
+      expect(onError).not.toHaveBeenCalled();
+      expect(mseLog.map((e) => e.event)).toEqual([
+        'buffer full: trimmed to retry the append',
+        'recovered: append succeeded after trimming',
+      ]);
+    });
+
+    it('gives up if the retry is refused as well', () => {
+      const { onError } = openStream(makeVideo(90));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.quotaFailures = 2;
+
+      segment();
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(onError).toHaveBeenCalledWith('appendBuffer: QuotaExceededError');
+    });
+
+    it('gives up at once if there is nothing played to trim', () => {
+      // Playhead at the very start: everything buffered is still ahead of it.
+      const { onError } = openStream(makeVideo(0.5));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (buffer) buffer.quotaFailures = 1;
+      segment();
+      expect(onError).toHaveBeenCalledWith('appendBuffer: QuotaExceededError');
+    });
+
+    it('records every failure with its reason', () => {
+      const { onError } = openStream();
+      FakeSocket.last?.onclose?.(new Event('close'));
+      expect(onError).toHaveBeenCalled();
+      expect(mseLog[mseLog.length - 1]?.event).toBe('failed: websocket closed');
+      expect(console.warn).toHaveBeenCalledWith('[naktv/mse] failed: websocket closed');
+    });
+
+    it('records a removal that fails instead of swallowing it', () => {
+      openStream(makeVideo(90));
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.removeThrows = true;
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(mseLog[mseLog.length - 1]?.event).toBe('remove failed: InvalidStateError');
+    });
+
+    it('reports a failure once, however many segments follow it', () => {
+      const { onError } = openStream();
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (buffer) buffer.updating = true;
+      for (let i = 0; i < 200; i += 1) segment();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(mseLog.filter((e) => e.event.startsWith('failed'))).toHaveLength(1);
+    });
+
+    it('appends everything queued during an append in one go', () => {
+      openStream();
+      reply();
+      const buffer = FakeMediaSource.last?.buffers[0];
+      if (!buffer) throw new Error('no buffer');
+      buffer.updating = true;
+      const parts = [new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5, 6])];
+      for (const part of parts) {
+        FakeSocket.last?.onmessage?.(new MessageEvent('message', { data: part.buffer }));
+      }
+      expect(buffer.appended).toHaveLength(0);
+
+      buffer.updating = false;
+      buffer.dispatchEvent(new Event('updateend'));
+      expect(buffer.appended).toHaveLength(1);
+      expect([...new Uint8Array(buffer.appended[0])]).toEqual([1, 2, 3, 4, 5, 6]);
+    });
   });
 });
