@@ -138,6 +138,30 @@ describe('PrinterCam', () => {
     expect(screen.getByLabelText('3D printer camera').tagName).toBe('VIDEO');
   });
 
+  // NAKTV-23: the fallback looks like a fault from the sofa unless it says so.
+  it('shows no MJPEG badge while on H.264', () => {
+    render(<PrinterCam />);
+    act(() => {
+      fireEvent.playing(screen.getByLabelText('3D printer camera'));
+    });
+    expect(screen.queryByText('MJPEG')).not.toBeInTheDocument();
+  });
+
+  it('shows an MJPEG badge once it has fallen back', () => {
+    render(<PrinterCam />);
+    exhaustRetries();
+    expect(screen.getByText('MJPEG')).toBeInTheDocument();
+  });
+
+  it('drops the MJPEG badge when H.264 comes back', () => {
+    render(<PrinterCam />);
+    exhaustRetries();
+    act(() => {
+      vi.advanceTimersByTime(CONFIG.printerCam.videoRetryMs + 100);
+    });
+    expect(screen.queryByText('MJPEG')).not.toBeInTheDocument();
+  });
+
   it('cancels the MJPEG stream when it hands back to H.264 (NAKTV-16)', () => {
     // Removing an <img> does not abort a multipart load on the TV: each
     // fallback-and-retry cycle left one more connection open to the camera.

@@ -25,6 +25,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${DEVICE_NAME:=NakTV}"
 : "${BITRATE:=320}"
 : "${INITIAL_VOLUME:=50}"
+# fixed: the stream always leaves at full level, and the TV's own volume is
+# the only control (NAKTV-22). With librespot's default softvol, Spotify
+# Connect's per-device slider scales the stream across a 60 dB log range, and
+# the phone's volume buttons move that slider whenever NakTV is the playback
+# device - so the TV went near-silent (-43 to -50 dB) while showing "playing".
+# Set VOLUME_CTRL=log to bring the slider back.
+: "${VOLUME_CTRL:=fixed}"
 : "${LOG_DIR:=/tmp}"
 # now-playing.py (the --onevent hook) and now-playing-server.py (the static
 # file server the TV polls) — see feed/README.md's "Now playing" section.
@@ -79,6 +86,7 @@ while true; do
       --backend pipe \
       --bitrate "$BITRATE" \
       --initial-volume "$INITIAL_VOLUME" \
+      --volume-ctrl "$VOLUME_CTRL" \
       --onevent "$NOW_PLAYING_SCRIPT" \
       2>>"$LIBRESPOT_LOG" \
     | "$PYTHON_BIN" "$PACER" --output "$FIFO" &

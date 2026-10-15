@@ -65,6 +65,16 @@ export function nowPlayingUrl(host: string = getSettings().go2rtcHost): string {
 }
 
 /**
+ * The feed's music source, Spotify or the CC library (NAKTV-26): GET reads it,
+ * POST `{"source": ...}` sets it. Served by the same now-playing server, and
+ * held on the feed box rather than in the TV's settings, because it decides
+ * what every camera stream carries, recordings included.
+ */
+export function musicSourceUrl(host: string = getSettings().go2rtcHost): string {
+  return `http://${host}:${NOW_PLAYING_PORT}/music-source`;
+}
+
+/**
  * Tuning shared by every camera tab's H.264 player: how long to wait for it,
  * and how it chases the live edge. None of this is camera-specific, only the
  * stream name and the MJPEG fallback are — see `printerCam` and `elegooCam`.
