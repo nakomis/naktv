@@ -9,7 +9,7 @@ from render import Part, Segment, Status, Track
 
 
 def status(t, layer, label="Exposing", total=100):
-    return Status(t=t, label=label, filename="calbits2.goo", layer=layer, total_layers=total,
+    return Status(t=t, label=label, filename="3cats-inverted.goo", layer=layer, total_layers=total,
                   percent=layer, remaining_ms=3_600_000 - t * 1000, total_ms=7_200_000)
 
 

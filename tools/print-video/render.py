@@ -2,7 +2,7 @@
 """Render a recorded resin print as a video with the NakTV overlay burned in.
 
 A capture (see capture/) is a set of files sharing one prefix, for example
-~/resin-recordings/2026-09-29-0040-calbits2:
+~/resin-recordings/2026-09-30-1510-3cats-inverted:
 
     PREFIX-part01.mkv ...   video-only copy of go2rtc's resin_av
     PREFIX-parts.jsonl      when each part started, as epoch seconds
@@ -745,7 +745,7 @@ def parse_clock(value: str, day: dt.date) -> float:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("capture", type=Path, help="capture prefix, e.g. ~/resin-recordings/2026-09-29-0040-calbits2")
+    ap.add_argument("capture", type=Path, help="capture prefix, e.g. ~/resin-recordings/2026-09-30-1510-3cats-inverted")
     ap.add_argument("-o", "--out", type=Path, required=True)
     ap.add_argument("--music", type=Path, help="folder of tracks, played in name order and looped")
     ap.add_argument("--from-layer", type=int)
@@ -753,7 +753,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--from-time", help="wall-clock HH:MM[:SS] to start at (on the capture's day)")
     ap.add_argument("--until-time", help="wall-clock HH:MM[:SS] to stop at")
     ap.add_argument("--max-seconds", type=float, help="stop after this much output (for test renders)")
-    # Calibrated by eye on 29 Sep 2026 (calbits2, millisecond event log): the
+    # Calibrated by eye on 29 Sep 2026 (an early capture, millisecond event log): the
     # printer reports each phase about 4 s after the camera shows it, so status
     # is shown 4 s *earlier* than cthulhu received it. The 1 Hz log alone
     # can't be calibrated like this; it smears every boundary by up to 1 s.

@@ -7,18 +7,22 @@ soundtrack. Made for YouTube (NAKTV-19).
 
 ## 1. Capture, on Rey, during the print
 
+Automatic. `print-recorder.service` on Rey (NAKTV-30, installed by
+home-infra's Rey playbook) runs `capture/print-recorder.sh`, which waits for
+cthulhu to report a print, captures it, and goes back to waiting: there is
+nothing to arm between prints. Its log is `journalctl -u print-recorder`.
+
+If the service restarts mid-print (a deploy, a reboot), it resumes the same
+capture: each one keeps its print's cthulhu task ID in `PREFIX.task`, the
+recording carries on as the next part, and nothing is overwritten.
+
+By hand, for a print the service isn't covering:
+
 ```bash
 tools/print-video/capture/start-capture.sh      # prints the capture prefix
 ```
 
-Or arm it before starting the print, and it begins by itself when the printer
-does:
-
-```bash
-setsid nohup tools/print-video/capture/wait-for-print.sh > wait-for-print.log 2>&1 &
-```
-
-That starts four detached jobs, all stopping by themselves when the print
+Either way, a capture is four jobs, all stopping by themselves when the print
 ends:
 
 | Job | Writes |

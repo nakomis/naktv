@@ -17,7 +17,10 @@ PREFIX="${1:?usage: record-print.sh PREFIX}"
 CTHULHU="${CTHULHU:-http://127.0.0.1:9120}"
 STREAM="${STREAM:-rtsp://127.0.0.1:8554/resin_av}"
 LOG="$PREFIX.log"
+# Carry on the numbering if this print was being recorded before (the
+# recorder restarted mid-print), so part01 is never overwritten.
 part=1
+[ -s "$PREFIX-parts.jsonl" ] && part=$(( $(wc -l < "$PREFIX-parts.jsonl") + 1 ))
 ffpid=""
 
 print_over() {
@@ -42,7 +45,10 @@ trap '[ -n "$ffpid" ] && kill -INT "$ffpid" 2>/dev/null; exit 0' INT TERM
 start_part
 over=0
 while true; do
-  sleep 30
+  # In the background and waited on: bash holds a signal until a foreground
+  # command finishes, so a plain sleep would delay a stop by up to 30 s.
+  sleep 30 &
+  wait $!
   if print_over; then over=$((over + 1)); else over=0; fi
   if [ "$over" -ge 2 ]; then
     echo "$(date +%T) print over; stopping" >> "$LOG"
