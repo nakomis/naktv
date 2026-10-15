@@ -2,7 +2,7 @@
 """Collect CC0 and CC BY music from Free Music Archive, licence checked per track.
 
     fetch_fma.py albums OUT_DIR ALBUM_URL [...] [--hours 4] [--seed N]
-    fetch_fma.py crawl  OUT_DIR [--genre Ambient ...] [--max-gb 500] [--cc0-only]
+    fetch_fma.py crawl  OUT_DIR [--genre Ambient ...] [--search trance ...] [--max-gb 500] [--cc0-only]
 
 `albums` picks tracks at random from the given album pages until about
 --hours of music (as used for the first print video). `crawl` walks FMA's
@@ -32,6 +32,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -131,15 +132,29 @@ def track_blobs(page: str) -> List[Dict]:
     return out
 
 
-def genre_tracks(http: Polite, genre: str) -> Iterator[Dict]:
-    """Every track listed under an FMA genre, page by page."""
+def listing_tracks(http: Polite, url: str) -> Iterator[Dict]:
+    """Every track in an FMA listing (a genre, or search results), page by
+    page. Both use the same track entries and the same `page` parameter."""
     page = 1
+    sep = "&" if "?" in url else "?"
     while True:
-        blobs = track_blobs(http.text(f"{FMA}/genre/{genre}/?page={page}"))
+        blobs = track_blobs(http.text(f"{url}{sep}page={page}"))
         if not blobs:
             return
         yield from blobs
         page += 1
+
+
+def genre_tracks(http: Polite, genre: str) -> Iterator[Dict]:
+    """Every track listed under an FMA genre."""
+    return listing_tracks(http, f"{FMA}/genre/{genre}/")
+
+
+def search_tracks(http: Polite, term: str) -> Iterator[Dict]:
+    """Every track FMA's search finds for a term. For styles FMA has no genre
+    for, such as trance. It matches titles and albums too, so "Tetris Trance"
+    comes along with the real thing."""
+    return listing_tracks(http, f"{FMA}/search/?quicksearch={urllib.parse.quote_plus(term)}")
 
 
 def clean_title(title: str) -> str:
@@ -342,10 +357,14 @@ def cmd_repair(args, lib: Library, http: Polite) -> None:
 def cmd_crawl(args, lib: Library, http: Polite) -> None:
     limit = args.max_gb * 1e9
     size = lib.bytes
-    for genre in args.genre:
+    # The default genres only when neither --genre nor --search was given.
+    genres = args.genre if args.genre is not None else ([] if args.search else DEFAULT_GENRES)
+    listings = [(g, genre_tracks(http, g)) for g in genres]
+    listings += [(f'search "{s}"', search_tracks(http, s)) for s in args.search]
+    for genre, tracks in listings:
         print(f"== {genre}", file=sys.stderr)
         n = kept = 0
-        for t in genre_tracks(http, genre):
+        for t in tracks:
             n += 1
             if lib.consider(http, t, args.cc0_only):
                 kept += 1
@@ -369,7 +388,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     a.add_argument("--seed", type=int)
     c = sub.add_parser("crawl", help="every usable track in the given genres")
     c.add_argument("out", type=Path)
-    c.add_argument("--genre", nargs="+", default=DEFAULT_GENRES)
+    c.add_argument("--genre", nargs="+", help=f"default: {' '.join(DEFAULT_GENRES)}, unless --search is given")
+    c.add_argument("--search", nargs="+", default=[], help="FMA search terms, for styles without a genre (e.g. trance)")
     c.add_argument("--max-gb", type=float, default=500)
     r = sub.add_parser("repair", help="rebuild tracks.json from the files' tags")
     r.add_argument("out", type=Path)
