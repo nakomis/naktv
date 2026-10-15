@@ -41,6 +41,13 @@ refuses to run unless the share's `.print-recordings` marker is visible. Its log
 is `journalctl -u print-archive`. To render an archived print, copy it from the
 share rather than from Rey.
 
+The archive leaves out `PREFIX-layers/` (thousands of small files, which Luke
+and Leia handle badly) whenever `PREFIX.goo` checks out layer by layer, since
+the `.goo` holds every layer at full resolution. `render.py` rebuilds the
+852×432 images from the `.goo` when the folder isn't there (about a minute per
+thousand layers on phi; it needs `cc` and zlib to build `goo/goopng.c` once,
+into `~/.cache/naktv/`). Rebuilt images match cthulhu's to within 0.02/255.
+
 ## 2. Copy to phi
 
 ```bash

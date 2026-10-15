@@ -37,7 +37,25 @@ class FakeCthulhu(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def make_capture(rec: Path, name: str, task: str = None, age_s: float = 3600):
+def make_goo(path: Path, layers: int, corrupt_layer: int = None, truncate: bool = False):
+    """A minimal .goo: zeroed header with the count and table offset, layers
+    of a few runs each with a valid checksum, and the end marker."""
+    table = ar.GOO_SETTINGS + 200
+    head = bytearray(table)
+    head[ar.GOO_SETTINGS:ar.GOO_SETTINGS + 4] = layers.to_bytes(4, "big")
+    head[ar.GOO_SETTINGS + 160:ar.GOO_SETTINGS + 164] = table.to_bytes(4, "big")
+    body = bytearray()
+    for i in range(layers):
+        runs = bytes([0x0F, 0xCF, 0x05])  # 15 off, 15 on, 5 off
+        data = bytearray([0x55]) + runs + bytes([(~sum(runs)) & 0xFF])
+        if i == corrupt_layer:
+            data[-1] ^= 0xFF
+        body += bytes(66) + len(data).to_bytes(4, "big") + data + b"\r\n"
+    out = bytes(head) + bytes(body) + ar.GOO_END
+    path.write_bytes(out[:-3] if truncate else out)
+
+
+def make_capture(rec: Path, name: str, task: str = None, age_s: float = 3600, goo: dict = None):
     files = [f"{name}.log", f"{name}.goo", f"{name}-parts.jsonl", f"{name}-status.jsonl", f"{name}-part01.mkv"]
     for f in files:
         (rec / f).write_bytes(os.urandom(2048))
@@ -48,12 +66,14 @@ def make_capture(rec: Path, name: str, task: str = None, age_s: float = 3600):
     (layers / ".complete").write_text("3 layers, 0 missing\n")
     if task:
         (rec / f"{name}.task").write_text(task + "\n")
+    if goo is not None:
+        make_goo(rec / f"{name}.goo", 3, **goo)
     old = time.time() - age_s
     for p in [*rec.glob(name + "*"), *layers.iterdir()]:
         os.utime(p, (old, old))
 
 
-class Archiver(unittest.TestCase):
+class Fixture(unittest.TestCase):
     def setUp(self):
         STATUS.update(statusLabel="Idle", taskId="")
         self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeCthulhu)
@@ -72,6 +92,8 @@ class Archiver(unittest.TestCase):
         self.httpd.shutdown()
         shutil.rmtree(self.tmp)
 
+
+class Archiver(Fixture):
     def test_refuses_without_the_share_marker(self):
         (self.share / ".print-recordings").unlink()
         make_capture(self.rec, "2026-10-01-1200-cat")
@@ -149,6 +171,45 @@ class Archiver(unittest.TestCase):
         ar.main(["--dry-run"])
         self.assertTrue((self.rec / "2026-10-01-1200-cat.goo").exists())
         self.assertFalse((self.archive / "2026-10-01-1200-cat").exists())
+
+
+
+class GooLayers(Fixture):
+    """The layer images are left out only when the .goo provably holds them."""
+
+    def test_a_sound_goo_has_its_layers_counted(self):
+        make_goo(self.tmp / "x.goo", 5)
+        self.assertEqual(ar.goo_layers(self.tmp / "x.goo"), 5)
+
+    def test_a_bad_checksum_or_a_truncated_goo_counts_as_unsound(self):
+        make_goo(self.tmp / "bad.goo", 5, corrupt_layer=3)
+        make_goo(self.tmp / "short.goo", 5, truncate=True)
+        self.assertIsNone(ar.goo_layers(self.tmp / "bad.goo"))
+        self.assertIsNone(ar.goo_layers(self.tmp / "short.goo"))
+
+    def test_layer_images_are_dropped_when_the_goo_holds_them(self):
+        make_capture(self.rec, "2026-10-01-1200-cat", goo={})
+        self.assertEqual(ar.main([]), 0)
+        dest = self.archive / "2026-10-01-1200-cat"
+        self.assertFalse((dest / "2026-10-01-1200-cat-layers").exists())
+        self.assertTrue((dest / "2026-10-01-1200-cat.goo").exists())
+        self.assertEqual(list(self.rec.iterdir()), [])  # the folder went too
+        info = json.loads((dest / ".archived").read_text())
+        self.assertEqual(info["layer_images_from_goo"], "2026-10-01-1200-cat-layers")
+
+    def test_layer_images_are_kept_when_the_goo_is_damaged(self):
+        make_capture(self.rec, "2026-10-01-1200-cat", goo={"corrupt_layer": 1})
+        self.assertEqual(ar.main([]), 0)
+        dest = self.archive / "2026-10-01-1200-cat"
+        self.assertEqual(len(list((dest / "2026-10-01-1200-cat-layers").glob("*.png"))), 3)
+
+    def test_layer_images_are_kept_when_the_goo_has_fewer_layers(self):
+        make_capture(self.rec, "2026-10-01-1200-cat")
+        make_goo(self.rec / "2026-10-01-1200-cat.goo", 2)  # 3 images, 2 layers
+        old = time.time() - 3600
+        os.utime(self.rec / "2026-10-01-1200-cat.goo", (old, old))
+        ar.main([])
+        self.assertTrue((self.archive / "2026-10-01-1200-cat" / "2026-10-01-1200-cat-layers").is_dir())
 
 
 if __name__ == "__main__":

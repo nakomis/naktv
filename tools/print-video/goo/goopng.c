@@ -1,7 +1,8 @@
 /*
  * goopng: round-trip an Elegoo .goo through full-resolution layer images.
  *
- *   goopng goo2png in.goo DIR          every layer -> DIR/NNNN.png (1-bit, as the LCD shows it)
+ *   goopng goo2png in.goo DIR          every layer -> DIR/NNNN.png, as the LCD shows it: 1-bit for a
+ *                                      black-and-white layer, 8-bit grey for an anti-aliased one
  *   goopng png2goo in.goo DIR out.goo  DIR/NNNN.png -> a new .goo
  *
  * png2goo takes only the file header from in.goo (thumbnails and print
@@ -9,7 +10,9 @@
  * layer's 66-byte definition is generated from those settings, not copied,
  * and each layer's image comes from the PNG.
  *
- * Black-and-white layers only: that is what Chitubox wrote (no anti-aliasing).
+ * goo2png decodes all four run types, so anti-aliased (grey) layers work.
+ * png2goo still writes black-and-white only: that is what Chitubox wrote, and
+ * what the rebuilds need.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -39,25 +42,48 @@ static uint8_t *slurp(const char *path, size_t *len) {
   return b;
 }
 
-/* Decode one layer's runs into px (one byte per pixel, 0 or 1). */
-static void decode(const uint8_t *d, uint32_t size, uint8_t *px, size_t total, int layer) {
+/* Decode one layer's runs into px: one byte per pixel, 0 (off) to 255 (fully
+ * on). Returns 1 if the layer has grey pixels (anti-aliasing), else 0.
+ *
+ * Each run starts with a byte whose top two bits are its type:
+ *   00  off (0x00)         } length: the low 4 bits, then the number of
+ *   11  on (0xFF)          } extra bytes in bits 5-4, high byte first
+ *   01  grey: the next byte is the value, then the length as above
+ *   10  a step from the previous pixel's value by the low 4 bits; bits 5-4
+ *       say up or down (0x/1x) and one pixel or a counted run (x0/x1,
+ *       the count in the next byte)
+ * The layer's checksum and its pixel count both have to come out right, so a
+ * misread run can't pass silently. */
+static int decode(const uint8_t *d, uint32_t size, uint8_t *px, size_t total, int layer) {
   if (d[0] != 0x55) { fprintf(stderr, "layer %d: no 0x55\n", layer); exit(1); }
   unsigned sum = 0;
   for (uint32_t i = 1; i < size - 1; i++) sum += d[i];
   if ((uint8_t)~sum != d[size - 1]) { fprintf(stderr, "layer %d: checksum\n", layer); exit(1); }
   size_t pixel = 0;
+  int grey = 0;
+  uint8_t value = 0;
   for (uint32_t i = 1; i < size - 1; i++) {
     uint8_t b = d[i];
-    int type = b >> 6, extra = (b >> 4) & 3;
-    if (type == 1 || type == 2) { fprintf(stderr, "layer %d: grey/step run, not handled\n", layer); exit(1); }
-    size_t high = 0;
-    for (int k = 0; k < extra; k++) high = high << 8 | d[++i];
-    size_t len = high * 16 + (b & 0x0f);
+    int type = b >> 6, sub = (b >> 4) & 3;
+    size_t len;
+    if (type == 2) {
+      int step = b & 0x0f;
+      value = (sub & 2) ? (uint8_t)(value - step) : (uint8_t)(value + step);
+      len = (sub & 1) ? d[++i] : 1;
+    } else {
+      if (type == 1) value = d[++i];
+      else value = type == 3 ? 0xff : 0x00;
+      size_t high = 0;
+      for (int k = 0; k < sub; k++) high = high << 8 | d[++i];
+      len = high * 16 + (b & 0x0f);
+    }
+    if (value != 0x00 && value != 0xff) grey = 1;
     if (pixel + len > total) { fprintf(stderr, "layer %d: too many pixels\n", layer); exit(1); }
-    memset(px + pixel, type == 3, len);
+    memset(px + pixel, value, len);
     pixel += len;
   }
   if (pixel != total) { fprintf(stderr, "layer %d: %zu pixels, expected %zu\n", layer, pixel, total); exit(1); }
+  return grey;
 }
 
 /* Encode px back into runs. Returns the size written to out. */
@@ -80,7 +106,7 @@ static size_t encode(const uint8_t *px, size_t total, uint8_t *out) {
   return o;
 }
 
-/* --- minimal 1-bit greyscale PNG, one IDAT, filter 0 --- */
+/* --- minimal greyscale PNG (1-bit, or 8-bit for grey layers), one IDAT, filter 0 --- */
 static void chunk(FILE *f, const char *type, const uint8_t *data, uint32_t len) {
   uint8_t h[8]; put32(h, len); memcpy(h + 4, type, 4);
   fwrite(h, 1, 8, f); if (len) fwrite(data, 1, len, f);
@@ -88,13 +114,15 @@ static void chunk(FILE *f, const char *type, const uint8_t *data, uint32_t len) 
   uint8_t cb[4]; put32(cb, (uint32_t)c); fwrite(cb, 1, 4, f);
 }
 
-static void write_png(const char *path, const uint8_t *px, int w, int h, uint8_t *raw, uint8_t *z, uLong zcap) {
-  size_t rb = (w + 7) / 8;
+static void write_png(const char *path, const uint8_t *px, int w, int h, uint8_t *raw, uint8_t *z, uLong zcap,
+                      int depth) {
+  size_t rb = depth == 8 ? (size_t)w : (size_t)(w + 7) / 8;
   for (int y = 0; y < h; y++) {
     uint8_t *row = raw + y * (rb + 1);
     row[0] = 0;
-    memset(row + 1, 0, rb);
     const uint8_t *s = px + (size_t)y * w;
+    if (depth == 8) { memcpy(row + 1, s, w); continue; }
+    memset(row + 1, 0, rb);
     for (int x = 0; x < w; x++) if (s[x]) row[1 + x / 8] |= 0x80 >> (x & 7);
   }
   uLongf zl = zcap;
@@ -104,7 +132,7 @@ static void write_png(const char *path, const uint8_t *px, int w, int h, uint8_t
   static const uint8_t sig[8] = {137, 80, 78, 71, 13, 10, 26, 10};
   fwrite(sig, 1, 8, f);
   uint8_t ihdr[13]; put32(ihdr, w); put32(ihdr + 4, h);
-  ihdr[8] = 1; ihdr[9] = 0; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  ihdr[8] = (uint8_t)depth; ihdr[9] = 0; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
   chunk(f, "IHDR", ihdr, 13);
   chunk(f, "IDAT", z, (uint32_t)zl);
   chunk(f, "IEND", NULL, 0);
@@ -142,9 +170,10 @@ int main(int argc, char **argv) {
   int w = be16(s + 4), h = be16(s + 6);
   float lh = bef(s + 22), exp = bef(s + 26), bexp = bef(s + 59);
   uint32_t bn = be32(s + 63);
-  size_t total = (size_t)w * h, rb = (w + 7) / 8;
-  uint8_t *px = malloc(total), *raw = malloc((size_t)h * (rb + 1));
-  uLong zcap = compressBound((uLong)h * (rb + 1));
+  size_t total = (size_t)w * h;
+  /* raw and z are sized for 8-bit rows, the larger of the two PNG depths. */
+  uint8_t *px = malloc(total), *raw = malloc((size_t)h * (w + 1));
+  uLong zcap = compressBound((uLong)h * (w + 1));
   uint8_t *z = malloc(zcap), *enc = malloc(total * 2 + 16);
   char path[4096];
   fprintf(stderr, "%u layers, %dx%d, %.3f mm, %.2f s (bottom %u at %.2f s)\n", n, w, h, lh, exp, bn, bexp);
@@ -153,9 +182,9 @@ int main(int argc, char **argv) {
     size_t off = table;
     for (uint32_t i = 0; i < n; i++) {
       uint32_t size = be32(g + off + DEF_BYTES);
-      decode(g + off + DEF_BYTES + 4, size, px, total, i);
+      int grey = decode(g + off + DEF_BYTES + 4, size, px, total, i);
       snprintf(path, sizeof path, "%s/%04u.png", argv[3], i);
-      write_png(path, px, w, h, raw, z, zcap);
+      write_png(path, px, w, h, raw, z, zcap, grey ? 8 : 1);
       off += DEF_BYTES + 4 + size + 2;
       if (i % 500 == 0) fprintf(stderr, "  %u\n", i);
     }

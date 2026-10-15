@@ -24,6 +24,13 @@ It never touches:
     task, or, for a capture made before .task files, it is the newest one);
   - any capture with a file changed in the last QUIET_MINUTES (default 30).
 
+The layer images (PREFIX-layers/, thousands of small files, which Luke and
+Leia handle badly) are not archived when PREFIX.goo holds them all: the .goo
+is checked layer by layer (structure, each layer's checksum, the end marker,
+and a layer count matching the images), and if it passes the folder is
+deleted with the rest instead of copied. render.py rebuilds the images from
+the .goo when it needs them. A capture without a sound .goo keeps its folder.
+
 It refuses to run at all unless ARCHIVE/../.print-recordings exists, a
 marker that lives on the share. If the CIFS mount had failed, ARCHIVE would
 be an empty folder on Rey's own disk, and "archiving" there and deleting
@@ -48,6 +55,11 @@ from typing import Dict, List, Optional
 
 PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{4}-.+$")
 MARKER = ".print-recordings"
+# Where the layer table's offset and count sit in a .goo header: after the
+# fixed settings and two RGB565 thumbnails (116x116 and 290x290).
+GOO_SETTINGS = 194 + 116 * 116 * 2 + 2 + 290 * 290 * 2 + 2
+GOO_LAYER_DEF = 66
+GOO_END = bytes([0, 0, 0, 7, 0, 0, 0, 0x44, 0x4C, 0x50, 0])
 IDLE = ("", "Idle", "Complete", "Stopped", "Cancelled")
 
 
@@ -100,6 +112,49 @@ def in_progress(name: str, paths: List[Path], task: Optional[str], newest_name: 
     return name == newest_name
 
 
+def goo_layers(path: Path) -> Optional[int]:
+    """The number of layers in a .goo if every one is intact, else None.
+
+    Walks the layer table as goo/goopng.c does: each layer's encoded image
+    must start with 0x55 and end with its checksum (the inverted low byte of
+    the sum of the bytes between), and the end marker must follow the last
+    layer and finish the file.
+    """
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as f:
+            f.seek(GOO_SETTINGS)
+            head = f.read(164)
+            if len(head) < 164:
+                return None
+            count = int.from_bytes(head[0:4], "big")
+            off = int.from_bytes(head[160:164], "big")
+            for _ in range(count):
+                f.seek(off + GOO_LAYER_DEF)
+                n = int.from_bytes(f.read(4), "big")
+                data = f.read(n)
+                if n < 2 or len(data) != n or data[0] != 0x55 or (~sum(data[1:-1])) & 0xFF != data[-1]:
+                    return None
+                off += GOO_LAYER_DEF + 4 + n + 2
+            f.seek(off)
+            if f.read(len(GOO_END)) != GOO_END or off + len(GOO_END) != size:
+                return None
+    except OSError:
+        return None
+    return count
+
+
+def droppable_layers(name: str, paths: List[Path]) -> Optional[Path]:
+    """The capture's layer-image folder, if its .goo holds every image in it."""
+    folder = next((p for p in paths if p.name == f"{name}-layers" and p.is_dir()), None)
+    goo = next((p for p in paths if p.name == f"{name}.goo"), None)
+    if folder is None or goo is None:
+        return None
+    images = len(list(folder.glob("*.png")))
+    layers = goo_layers(goo)
+    return folder if layers and images <= layers else None
+
+
 def rsync(args: List[str]) -> subprocess.CompletedProcess:
     return subprocess.run(["rsync", *args], capture_output=True, text=True)
 
@@ -107,15 +162,18 @@ def rsync(args: List[str]) -> subprocess.CompletedProcess:
 def archive_one(name: str, paths: List[Path], archive: Path, dry_run: bool) -> bool:
     """Copy, verify, delete. True if the capture was archived and removed."""
     dest = archive / name
-    srcs = [str(p) + ("/" if p.is_dir() else "") for p in sorted(paths)]
+    drop = droppable_layers(name, paths)
+    keep = [p for p in paths if p != drop]
     # -rt, not -a: a CIFS share can't take Rey's owners and modes, and
     # trying makes every run report changes.
     copy_args = ["-rt", "--partial", "--no-perms", "--no-owner", "--no-group"]
+    if drop is not None:
+        log(f"  layer images left out: {name}.goo holds all {goo_layers(paths[0].parent / (name + '.goo'))} layers")
     if dry_run:
-        log(f"  would copy {len(paths)} items to {dest}")
+        log(f"  would copy {len(keep)} items to {dest}")
         return False
     dest.mkdir(parents=True, exist_ok=True)
-    for p in sorted(paths):
+    for p in sorted(keep):
         target = dest / p.name
         r = rsync([*copy_args, str(p) + ("/" if p.is_dir() else ""), str(target) + ("/" if p.is_dir() else "")])
         if r.returncode:
@@ -123,12 +181,14 @@ def archive_one(name: str, paths: List[Path], archive: Path, dry_run: bool) -> b
             return False
     # Verify every file, both sides read in full. Any difference, or any
     # file missing from the copy, and nothing is deleted.
-    for src, copy in _pairs(paths, dest):
+    for src, copy in _pairs(keep, dest):
         if not copy.is_file() or sha256(src) != sha256(copy):
             log(f"  verify FAILED for {copy.relative_to(dest)}; keeping the original")
             return False
-    (dest / ".archived").write_text(json.dumps({"archived_at": time.time(), "items": [p.name for p in paths],
-                                                "bytes": sum(_size(p) for p in paths)}) + "\n")
+    (dest / ".archived").write_text(json.dumps({
+        "archived_at": time.time(), "items": [p.name for p in keep], "bytes": sum(_size(p) for p in keep),
+        # Rebuild with render.py, or goo/goopng.c goo2png.
+        "layer_images_from_goo": drop.name if drop is not None else None}) + "\n")
     for p in paths:
         if p.is_dir():
             shutil.rmtree(p)

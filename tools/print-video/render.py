@@ -8,7 +8,9 @@ A capture (see capture/) is a set of files sharing one prefix, for example
     PREFIX-parts.jsonl      when each part started, as epoch seconds
                             (older captures: PREFIX.log, "HH:MM:SS part N")
     PREFIX-status.jsonl     cthulhu /api/status once a second, with epoch "t"
-    PREFIX-layers/NNNN.png  every layer image, from /api/print/layer
+    PREFIX-layers/NNNN.png  every layer image, from /api/print/layer; or, if
+                            the folder is gone (the archive drops it: NAKTV-33),
+                            decoded from PREFIX.goo with goo/goopng.c
 
 Everything is lined up by wall-clock time. The camera runs a little behind
 the picture: the printer reports each phase about 4 s after the camera shows
@@ -467,6 +469,45 @@ def layer_path(layers_dir: Path, layer: int) -> Path:
     raise SystemExit(f"no layer image at or before {layer} in {layers_dir}")
 
 
+# cthulhu's /api/print/layer images are 852x432, a tenth of the LCD. Layers
+# decoded from the .goo are scaled to match, so a render looks the same
+# whichever it came from (checked to within 0.02/255 on a real print).
+LAYER_PREVIEW_SIZE = (852, 432)
+GOOPNG_SRC = Path(__file__).resolve().parent / "goo" / "goopng.c"
+
+
+def goopng_binary() -> Path:
+    """goo/goopng.c, compiled into a cache on first use or when it changes."""
+    out = Path(os.environ.get("GOOPNG_BIN", "~/.cache/naktv/goopng")).expanduser()
+    if not out.exists() or out.stat().st_mtime < GOOPNG_SRC.stat().st_mtime:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["cc", "-O2", "-o", str(out), str(GOOPNG_SRC), "-lz"], check=True)
+    return out
+
+
+def layers_dir_for(prefix: Path, work: Path, ffmpeg: str) -> Path:
+    """The capture's layer images: its own folder, or decoded from its .goo."""
+    folder = Path(str(prefix) + "-layers")
+    if folder.is_dir() and any(folder.glob("*.png")):
+        return folder
+    goo = Path(str(prefix) + ".goo")
+    if not goo.is_file():
+        raise SystemExit(f"no layer images: neither {folder} nor {goo} exists")
+    full, small = work / "layers-full", work / "layers"
+    full.mkdir()
+    small.mkdir()
+    print(f"decoding layers from {goo.name}", file=sys.stderr)
+    subprocess.run([str(goopng_binary()), "goo2png", str(goo), str(full)], check=True)
+    w, h = LAYER_PREVIEW_SIZE
+    # One ffmpeg for all of them; area scaling averages the LCD's pixels as
+    # cthulhu's preview does. gray keeps anti-aliased edges.
+    subprocess.run([ffmpeg, "-v", "error", "-y", "-start_number", "0", "-i", str(full / "%04d.png"),
+                    "-vf", f"scale={w}:{h}:flags=area,format=gray", "-start_number", "0",
+                    str(small / "%04d.png")], check=True)
+    subprocess.run(["rm", "-rf", str(full)], check=True)
+    return small
+
+
 def concat_quote(path: Path) -> str:
     return "'" + str(path).replace("'", "'\\''") + "'"
 
@@ -828,7 +869,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ass_path.write_text(build_ass(events))
     changes = layer_changes(statuses, segments, args.offset)
     layers_script = work / "layers.ffconcat"
-    layers_script.write_text(layer_concat(changes, Path(str(prefix) + "-layers"), length))
+    layers_script.write_text(layer_concat(changes, layers_dir_for(prefix, work, args.ffmpeg), length))
     sidecar = args.out.expanduser().with_suffix(".layers.json")
     side = layers_sidecar(changes, args.layer_scale, length)
     side["panel"].update(resolution=args.layer_resolution, blur=args.layer_blur)
