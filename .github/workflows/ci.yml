@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # `edited` as well as the defaults, because it's the only event GitHub
+    # sends when a PR's base changes. A PR stacked on another branch is
+    # retargeted to main once the one below it merges; without this, CI never
+    # ran on it and auto-merge waited forever for the required CI Status.
+    # It also reruns CI after a title or description edit, which the
+    # concurrency group below cancels and restarts rather than doubling up.
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 # Check out the post-merge state on PRs so CI validates what will land on main,
