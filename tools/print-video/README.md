@@ -53,9 +53,14 @@ python3 render.py captures/PREFIX --music ~/Music/CC0\ Ambient \
   (`PREFIX-status-events.jsonl`); with only the 1 Hz log, boundaries are
   smeared by up to a second.
 - **Music:** every audio file in the folder, in `tracks.json` order (else by
-  name), looped if the video is longer. `music/fetch_fma.py` fills the folder
-  with CC0 tracks picked at random from Free Music Archive albums, checking
-  each track's own page for the CC0 licence. Artist
+  name), looped if the video is longer. `music/fetch_fma.py albums` fills the
+  folder with tracks picked at random from Free Music Archive albums;
+  `fetch_fma.py crawl` walks FMA's genre listings for a large library (NAKTV-25).
+  Either way, only tracks whose own page states CC0 1.0 or CC BY are kept
+  (NC, ND and SA are refused), with the licence and its link in `tracks.json`
+  and in the file tags. The description and pinned comment credit every track
+  with its licence and link, as CC BY requires, and say when the last track is
+  cut short to fit. Artist
   and title come from `tracks.json` in that folder if present, then the file
   tags, then an `Artist - Title` file name. `tracks.json` also carries each
   track's licence and source URL.

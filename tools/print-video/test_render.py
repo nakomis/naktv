@@ -111,6 +111,23 @@ class Description(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertTrue(all(len(c) <= render.COMMENT_LIMIT for c in chunks))
 
+    def test_mixed_licences_are_named_per_album_and_linked_per_track(self):
+        a, _ = self.tracks()
+        b = Track(Path("b.mp3"), 70, "1000 Handz", "OK Today", "CC BY 4.0",
+                  "https://freemusicarchive.org/music/1000-handz/cc-by-drum-bass/ok-today/", "",
+                  "https://creativecommons.org/licenses/by/4.0/")
+        timeline = render.playlist_timeline([a, b], 200)
+        text = render.description(timeline)
+        self.assertIn("1000 Handz: https://freemusicarchive.org/music/1000-handz/cc-by-drum-bass/ (CC BY 4.0)", text)
+        [c] = render.comments(timeline)
+        self.assertIn("(CC BY 4.0, https://creativecommons.org/licenses/by/4.0/)", c)
+
+    def test_says_when_the_last_track_is_cut_short(self):
+        a, b = self.tracks()
+        timeline = render.playlist_timeline([a, b], 100)  # b starts at 70 and runs to 140
+        self.assertIn("is cut short to fit the video", render.description(timeline, length=100))
+        self.assertNotIn("cut short", render.description(timeline, length=140))
+
     def test_hour_long_videos_get_hours_in_their_timestamps(self):
         self.assertEqual(render.clock(3725), "1:02:05")
 
