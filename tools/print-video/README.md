@@ -32,8 +32,14 @@ ends:
 | `log-status-events.py` | `PREFIX-status-events.jsonl`: every phase and layer change, to the millisecond, as cthulhu pushes it over `/api/ws`. |
 | `save-layers.sh` | `PREFIX.goo`: the print file itself, copied out of cthulhu's volume (full resolution, per-layer exposure times). `PREFIX-layers/NNNN.png`: every layer image, which render.py uses. **These are only available while the print is cthulhu's current job**, so this runs during the print. |
 
-About 1.6 GB an hour, measured. Rey is only the buffer: copy the capture to
-phi to render, and archive it to Luke/Leia at leisure.
+About 1.6 GB an hour, measured. Rey is only the buffer: `print-archive.timer`
+(NAKTV-33) runs `capture/archive-recordings.py` hourly. It copies each finished
+capture to Luke's `print-recordings` share (`resin/<capture>/`), verifies every
+file by SHA-256 on both sides, and only then deletes it from Rey. It never
+touches the print in progress, or a capture changed in the last 30 minutes, and
+refuses to run unless the share's `.print-recordings` marker is visible. Its log
+is `journalctl -u print-archive`. To render an archived print, copy it from the
+share rather than from Rey.
 
 ## 2. Copy to phi
 
